@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # Import routes
-from app.routes import auth_routes, chat_routes, voice_routes, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes
+from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes
 from app.models.database import Base, engine, DB_FALLBACK_USED
 
 @asynccontextmanager
@@ -57,6 +57,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(voice_routes.router, prefix="/api/voice", tags=["Voice"])
+app.include_router(voice_realtime.router)
+app.include_router(voice_realtime_v2.router, prefix="/api", tags=["Voice Agent - Real-time Streaming"])
 app.include_router(ocr_routes.router, prefix="/api/verify", tags=["Document Verification"])
 app.include_router(loan_routes.router, prefix="/api/loan", tags=["Loan Prediction"])
 app.include_router(report_routes.router, prefix="/api/report", tags=["Reports"])
