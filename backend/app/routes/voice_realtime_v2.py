@@ -64,6 +64,18 @@ logger = logging.getLogger(__name__)
 
 # ========================== Configuration ==========================
 
+
+async def _safe_close(ws: WebSocket):
+    """Close a WebSocket safely, ignoring duplicate-close RuntimeErrors."""
+    try:
+        await ws.close()
+    except RuntimeError:
+        # Uvicorn/Starlette raises RuntimeError if close was already sent
+        logger.debug("WebSocket already closed; ignoring duplicate close")
+    except Exception as e:
+        logger.warning(f"Unexpected error while closing websocket: {e}")
+
+
 VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "./models/vosk-model-small-en-us-0.15")
 PIPER_MODEL = os.getenv("PIPER_MODEL", "en_US-amy-medium")
 PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-amy-medium")  # Some Piper versions use --voice
@@ -104,6 +116,42 @@ def get_supabase_client() -> Optional[Client]:
     except Exception as e:
         logger.error(f"Failed to create Supabase client: {e}")
         return None
+
+
+def resolve_piper_model_setting() -> Dict[str, Optional[str]]:
+    """Resolve Piper model/data-dir arguments.
+
+    Returns a dict with keys:
+      - 'model_arg': list of CLI args for model (e.g. ['--model', '/path/to/model.onnx']) or None
+      - 'data_dir_arg': list of CLI args for data dir (e.g. ['--data-dir','/path']) or None
+
+    Logic:
+      - If `PIPER_MODEL` is an existing file path, use `--model <path>`.
+      - Else if `<backend>/piper_voices/<PIPER_MODEL>.onnx` exists, use that as `--model`.
+      - Else if `<backend>/piper_voices` exists, prefer `--data-dir <backend>/piper_voices`.
+      - Else, return None for both and let caller pass the simple name to Piper (it may resolve via system data dir).
+    """
+    from typing import Dict
+    backend_root = Path(__file__).resolve().parents[2]
+    model_setting = os.getenv("PIPER_MODEL", PIPER_MODEL)
+
+    # If absolute or relative path provided
+    model_path = Path(model_setting)
+    if model_path.exists():
+        return {"model_arg": ["--model", str(model_path)], "data_dir_arg": None}
+
+    # Check backend-local piper_voices/<model>.onnx
+    candidate = backend_root / "piper_voices" / f"{model_setting}.onnx"
+    if candidate.exists():
+        return {"model_arg": ["--model", str(candidate)], "data_dir_arg": None}
+
+    # If a piper_voices directory exists, use it as data-dir
+    voices_dir = backend_root / "piper_voices"
+    if voices_dir.exists():
+        return {"model_arg": None, "data_dir_arg": ["--data-dir", str(voices_dir)]}
+
+    # Nothing found
+    return {"model_arg": None, "data_dir_arg": None}
 
 
 def parse_written_number(text: str) -> float:
@@ -349,14 +397,22 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
         piper_cmd = str(Path(sys.executable).parent / "piper")
         if not Path(piper_cmd).exists():
             piper_cmd = "piper"  # Fallback to system PATH
-        
-        # Try different Piper CLI formats (it varies by installation)
-        # Format 1: piper --model X --output_file Y < input.txt
-        # Format 2: echo "text" | piper -m X -f Y
-        
+
+        # Resolve model or data-dir arguments for Piper
+        model_info = resolve_piper_model_setting()
+        model_arg = []
+        if model_info.get("model_arg"):
+            model_arg = model_info.get("model_arg")
+        elif model_info.get("data_dir_arg"):
+            model_arg = model_info.get("data_dir_arg")
+        else:
+            # Fallback: pass the PIPER_MODEL raw value as the model argument (some installs use model tags)
+            model_arg = ["--model", PIPER_MODEL]
+
+        # Try Piper CLI invocation with resolved args
         proc = await asyncio.create_subprocess_exec(
             piper_cmd,
-            "--model", PIPER_MODEL,
+            *model_arg,
             "--output_file", output_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -801,5 +857,5 @@ async def voice_stream_endpoint(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"Final Supabase log error: {e}")
         
-        await websocket.close()
+        await _safe_close(websocket)
         logger.info(f"Session closed: {session_id}")

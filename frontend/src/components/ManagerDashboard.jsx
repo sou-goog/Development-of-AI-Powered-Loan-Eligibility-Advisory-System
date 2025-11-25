@@ -92,13 +92,27 @@ export default function ManagerDashboard() {
         }
       }
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `loan_report_${applicationId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
+      const contentType =
+        response.headers?.["content-type"] || "application/pdf";
+      const blob = new Blob([response.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      if (contentType.includes("html")) {
+        // Open HTML fallback in new tab
+        window.open(url, "_blank");
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute(
+          "download",
+          `loan_report_${applicationId}${
+            contentType.includes("pdf") ? ".pdf" : ""
+          }`
+        );
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       setError("Failed to download report");
     }

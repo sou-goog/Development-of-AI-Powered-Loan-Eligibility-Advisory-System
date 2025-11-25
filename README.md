@@ -769,6 +769,42 @@ This project is open-source and available for educational purposes.
 
 ## ✅ Checklist for First Run
 
+## 🔊 Voice (Vosk + Piper) Setup
+
+Vosk (offline STT) and Piper (local TTS) are used for the real-time voice assistant.
+
+1. Install Piper into the backend virtualenv and download a voice:
+
+```bash
+cd backend
+source venv/bin/activate   # if you use a venv created by setup.sh
+python -m pip install piper-tts
+python -m piper.download_voices en_US-amy-medium --download-dir ./piper_voices
+```
+
+2. Download a small Vosk model (setup script tries this automatically):
+
+```bash
+curl -L -o /tmp/vosk-small.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip -q /tmp/vosk-small.zip -d backend/models
+rm /tmp/vosk-small.zip
+```
+
+3. Set environment variables (or copy `.env.example`):
+
+```env
+VOSK_MODEL_PATH=./models/vosk-model-small-en-us-0.15
+PIPER_MODEL=./piper_voices/en_US-amy-medium.onnx
+```
+
+4. Start the backend and check the voice health endpoint:
+
+```bash
+python main.py
+curl http://localhost:8000/api/voice/health
+```
+
+
 - [ ] Python 3.11+ installed
 - [ ] Node.js 18+ installed
 - [ ] Ollama installed and running (`ollama serve`)

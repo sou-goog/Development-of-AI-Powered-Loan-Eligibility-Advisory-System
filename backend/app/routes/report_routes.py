@@ -65,14 +65,33 @@ async def generate_report(
         }
         
         # Generate report
-        report_path = report_service.generate_report(app_data)
-        
+        # Generate or fetch AI analysis and attach to report data
+        try:
+            analysis_resp = await generate_ai_analysis(application_id, db)
+            if isinstance(analysis_resp, dict):
+                app_data["analysis"] = analysis_resp.get("analysis")
+                app_data["analysis_source"] = analysis_resp.get("source")
+                app_data["llm_error"] = analysis_resp.get("llm_error")
+        except Exception as e:
+            # Don't fail report generation for analysis issues; log and continue
+            logger.warning(f"Failed to generate AI analysis for report: {e}")
+
+        try:
+            report_path = report_service.generate_report(app_data)
+        except RuntimeError as e:
+            # Surface PDF generation errors (e.g., WeasyPrint missing or conversion failed)
+            logger.error(f"PDF generation failed for application {application_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"PDF generation failed: {str(e)}"
+            )
+
         # Update application with report path
         app.report_path = report_path
         db.commit()
-        
+
         logger.info(f"Report generated for application {application_id}")
-        
+
         return {
             "report_path": report_path,
             "report_url": f"/static/reports/{Path(report_path).name}",
@@ -192,12 +211,14 @@ async def generate_ai_analysis(
             "Use Indian currency style where applicable, avoid jargon, and keep it to ~150-250 words."
         )
 
+        llm_error = None
         try:
             llm = get_llm_service()  # respects LLM_PROVIDER env
             analysis_text = llm.generate(prompt, context=context)
-            if analysis_text and isinstance(analysis_text, str):
-                return {"application_id": application_id, "analysis": analysis_text}
+            if analysis_text and isinstance(analysis_text, str) and analysis_text.strip():
+                return {"application_id": application_id, "analysis": analysis_text, "source": "llm"}
         except Exception as e:
+            llm_error = str(e)
             logger.warning(f"LLM analysis unavailable, falling back to heuristic: {e}")
 
         # Heuristic fallback analysis
@@ -238,7 +259,12 @@ async def generate_ai_analysis(
             "Recommendations:",
         ] + [f"- {r}" for r in recommendations]
 
-        return {"application_id": application_id, "analysis": "\n".join(analysis_lines)}
+        return {
+            "application_id": application_id,
+            "analysis": "\n".join(analysis_lines),
+            "source": "heuristic",
+            "llm_error": llm_error,
+        }
 
     except HTTPException:
         raise

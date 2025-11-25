@@ -164,12 +164,18 @@ const LoanResultCard = ({
       setAnalysisError("");
       try {
         const { data } = await reportAPI.generateAnalysis(applicationId);
-        if (!cancelled) setAnalysis(data.analysis);
+        // Prefer explicit analysis text; if missing, fall back to raw payload for debugging
+        const analysisText = data?.analysis ?? JSON.stringify(data ?? {});
+        if (!cancelled) setAnalysis(analysisText);
       } catch (e) {
-        if (!cancelled)
-          setAnalysisError(
-            "Sorry, I'm having trouble responding right now. Please try again."
-          );
+        // Provide more detailed error feedback for debugging
+        let msg =
+          "Sorry, I'm having trouble responding right now. Please try again.";
+        try {
+          msg =
+            e?.response?.data?.detail || e?.response?.data || e?.message || msg;
+        } catch (__) {}
+        if (!cancelled) setAnalysisError(String(msg));
       } finally {
         if (!cancelled) setLoadingExplain(false);
       }
@@ -297,12 +303,21 @@ const LoanResultCard = ({
                   const { data } = await reportAPI.generateAnalysis(
                     applicationId
                   );
-                  setAnalysis(data.analysis);
+                  const analysisText =
+                    data?.analysis ?? JSON.stringify(data ?? {});
+                  setAnalysis(analysisText);
                   setAnalysisError("");
                 } catch (e) {
-                  setAnalysisError(
-                    "Sorry, I'm having trouble responding right now. Please try again."
-                  );
+                  let msg =
+                    "Sorry, I'm having trouble responding right now. Please try again.";
+                  try {
+                    msg =
+                      e?.response?.data?.detail ||
+                      e?.response?.data ||
+                      e?.message ||
+                      msg;
+                  } catch (__) {}
+                  setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
                 }
@@ -327,14 +342,22 @@ const LoanResultCard = ({
                   await reportAPI.generateReport(applicationId);
                   // Then trigger download
                   const res = await reportAPI.downloadReport(applicationId);
-                  const blob = new Blob([res.data], {
-                    type: "application/pdf",
-                  });
+                  const contentType =
+                    res.headers?.["content-type"] || "application/pdf";
+                  const blob = new Blob([res.data], { type: contentType });
                   const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `loan_report_${applicationId}.pdf`;
-                  a.click();
+                  // If the server returned HTML (fallback), open in new tab so browser can render it.
+                  if (contentType.includes("html")) {
+                    window.open(url, "_blank");
+                  } else {
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `loan_report_${applicationId}${
+                      contentType.includes("pdf") ? ".pdf" : ""
+                    }`;
+                    a.click();
+                    a.remove();
+                  }
                   window.URL.revokeObjectURL(url);
                 } catch (e) {
                   // optional: toast

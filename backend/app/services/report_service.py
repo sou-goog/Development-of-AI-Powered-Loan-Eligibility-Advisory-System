@@ -39,34 +39,29 @@ class ReportService:
         report_data = self._prepare_report_data(application_data)
         html_content = self._render_template(report_data)
 
-        # Prefer PDF via WeasyPrint when available; otherwise fallback to HTML file
+        # Require WeasyPrint to generate PDF. If PDF generation fails, raise an error
         try:
             from weasyprint import HTML  # type: ignore
-            # Filename
-            if not output_filename:
-                app_id = application_data.get('id', 'unknown')
-                output_filename = f"loan_report_{app_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            output_path = self.reports_dir / output_filename
+        except Exception as e:
+            logger.error(f"WeasyPrint is not available: {e}")
+            raise RuntimeError(
+                "PDF generation requires WeasyPrint. Install it in the backend environment."
+            )
+
+        # Filename
+        if not output_filename:
+            app_id = application_data.get("id", "unknown")
+            output_filename = f"loan_report_{app_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        output_path = self.reports_dir / output_filename
+
+        try:
             HTML(string=html_content).write_pdf(str(output_path))
             logger.info(f"Generated PDF report: {output_path}")
             return str(output_path)
         except Exception as e:
-            # Fallback: write HTML report instead of failing
-            try:
-                if not output_filename:
-                    app_id = application_data.get('id', 'unknown')
-                    output_filename = f"loan_report_{app_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                else:
-                    # Ensure .html extension for fallback
-                    if not output_filename.lower().endswith('.html'):
-                        output_filename = output_filename.rsplit('.', 1)[0] + '.html'
-                output_path = self.reports_dir / output_filename
-                output_path.write_text(html_content, encoding='utf-8')
-                logger.warning(f"WeasyPrint unavailable or failed ({e}). Wrote HTML report instead: {output_path}")
-                return str(output_path)
-            except Exception as e2:
-                logger.error(f"Report generation failed (fallback also failed): {e2}")
-                raise
+            logger.error(f"WeasyPrint failed to generate PDF: {e}")
+            # Do not fallback to HTML; surface error so API returns 500 and frontend won't receive HTML as PDF
+            raise RuntimeError(f"Failed to generate PDF report: {e}")
     
     def _prepare_report_data(self, application_data: dict) -> dict:
         """Prepare data for report template"""
@@ -102,6 +97,10 @@ class ReportService:
             "dti": f"{(dti or 0):.1%}",
             "generated_date": datetime.now().strftime("%B %d, %Y at %I:%M %p"),
             "generated_timestamp": datetime.now().isoformat(),
+            # Include AI analysis if present
+            "ai_analysis": application_data.get("analysis"),
+            "analysis_source": application_data.get("analysis_source"),
+            "llm_error": application_data.get("llm_error"),
         }
     
     def _render_template(self, report_data: dict) -> str:
@@ -173,6 +172,15 @@ class ReportService:
             <div class="section">
                 <div class="section-title">Manager Notes</div>
                 <p>{report_data['manager_notes']}</p>
+            </div>
+
+            <div class="section">
+                <div class="section-title">AI Analysis</div>
+                <div class="notes-section">
+                    <p>{report_data.get('ai_analysis', 'No AI analysis available.')}</p>
+                    <p style="margin-top:10px;font-size:12px;color:#666;">Source: {report_data.get('analysis_source', 'n/a')}</p>
+                    {f"<p style='color:#a00;font-size:12px;'>LLM Error: {report_data.get('llm_error')}</p>" if report_data.get('llm_error') else ''}
+                </div>
             </div>
             
             <div class="footer">
