@@ -1,162 +1,411 @@
-import React, { useState } from "react";
-import { ocrAPI, loanAPI, reportAPI } from "../utils/api";
+import React, { useState, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
+import { motion, AnimatePresence } from "framer-motion";
+import { ocrAPI, loanAPI } from "../utils/api";
+import { toast } from "react-toastify";
+import {
+  Upload,
+  FileText,
+  CheckCircle,
+  X,
+  AlertCircle,
+  Loader,
+} from "lucide-react";
+
+const DOCUMENT_TYPES = [
+  { id: "aadhaar", label: "Aadhaar Card", description: "National ID proof" },
+  { id: "pan", label: "PAN Card", description: "Tax ID" },
+  { id: "kyc", label: "KYC Document", description: "Know Your Customer proof" },
+  {
+    id: "bank_statement",
+    label: "Bank Statement",
+    description: "Last 6 months statement",
+  },
+  { id: "salary_slip", label: "Salary Slip", description: "Recent salary slip" },
+];
 
 export default function DocumentVerification({ applicationId, onVerified }) {
-  const [file, setFile] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [extractedData, setExtractedData] = useState(null);
-  const [error, setError] = useState("");
-  const [step, setStep] = useState("upload"); // upload, review, predicted
+  const [uploadedDocuments, setUploadedDocuments] = useState({});
+  const [uploading, setUploading] = useState({});
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [extractedData, setExtractedData] = useState({});
+  const [error, setError] = useState(null);
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setError("");
+  const handleUpload = useCallback(
+    async (file, docType) => {
+      if (!applicationId) {
+        toast.error("Application ID is required to upload documents.");
+        return;
+      }
+
+      setUploading((prev) => ({ ...prev, [docType]: true }));
+      setUploadProgress((prev) => ({ ...prev, [docType]: 0 }));
+      setError(null);
+
+      try {
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => {
+            const current = prev[docType] || 0;
+            if (current >= 90) {
+              clearInterval(progressInterval);
+              return prev;
+            }
+            return { ...prev, [docType]: current + 10 };
+          });
+        }, 200);
+
+        const response = await ocrAPI.verifyDocument(applicationId, file);
+
+        clearInterval(progressInterval);
+        setUploadProgress((prev) => ({ ...prev, [docType]: 100 }));
+
+        setUploadedDocuments((prev) => ({
+          ...prev,
+          [docType]: { file, response },
+        }));
+
+        setExtractedData((prev) => ({
+          ...prev,
+          [docType]: response.data.extracted_data,
+        }));
+
+        try {
+          await loanAPI.verifyDocument(
+            applicationId,
+            response.data.extracted_data
+          );
+        } catch (verifyError) {
+          console.error("Document verification failed:", verifyError);
+        }
+
+        const docLabel = DOCUMENT_TYPES.find(d => d.id === docType)?.label;
+        toast.success(`${docLabel} uploaded successfully!`);
+      } catch (error) {
+        const status = error?.response?.status;
+        const detail = error?.response?.data?.detail;
+        let message = "Failed to upload document. Please try again.";
+        if (status === 404) {
+          message = "Application not found.";
+        } else if (
+          status === 400 &&
+          typeof detail === "string" &&
+          detail.includes("Unsupported file type")
+        ) {
+          message = `${detail}. Please upload JPG, PNG, or PDF (max 10MB).`;
+        } else if (status === 400 && typeof detail === "string") {
+          message = detail;
+        }
+        setError(message);
+        toast.error(message);
+      } finally {
+        setTimeout(() => {
+          setUploading((prev) => ({ ...prev, [docType]: false }));
+          setUploadProgress((prev) => ({ ...prev, [docType]: 0 }));
+        }, 1000);
+      }
+    },
+    [applicationId]
+  );
+
+  const handleDropZone = useCallback(
+    (docType) => (acceptedFiles, rejectedFiles) => {
+      if (rejectedFiles.length > 0) {
+        setError("Please upload a valid file (JPG, PNG, or PDF, max 10MB)");
+        return;
+      }
+
+      const file = acceptedFiles[0];
+      if (file) {
+        setError(null);
+        handleUpload(file, docType);
+      }
+    },
+    [handleUpload]
+  );
+
+  const removeDocument = (docType) => {
+    setUploadedDocuments((prev) => {
+      const updated = { ...prev };
+      delete updated[docType];
+      return updated;
+    });
+    setExtractedData((prev) => {
+      const updated = { ...prev };
+      delete updated[docType];
+      return updated;
+    });
   };
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a file");
+  const allDocumentsUploaded = DOCUMENT_TYPES.every((doc) =>
+    uploadedDocuments.hasOwnProperty(doc.id)
+  );
+
+
+  const handlePredictEligibility = async () => {
+    if (!allDocumentsUploaded) {
+      toast.error("Please upload all required documents first.");
       return;
     }
 
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const response = await ocrAPI.verifyDocument(applicationId, file);
-      setExtractedData(response.data);
-      setStep("review");
-    } catch (err) {
-      setError(err.response?.data?.detail || "Failed to verify document");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handlePredictEligibility = async () => {
-    setIsLoading(true);
+    setCheckingEligibility(true);
     try {
       const response = await loanAPI.predictForApplication(applicationId);
-      setStep("predicted");
       onVerified && onVerified(response.data);
-
-      // Generate report
-      await reportAPI.generateReport(applicationId);
+      toast.success("Eligibility check completed!");
     } catch (err) {
       setError(err.response?.data?.detail || "Failed to predict eligibility");
+      toast.error(err.response?.data?.detail || "Failed to predict eligibility");
     } finally {
-      setIsLoading(false);
+      setCheckingEligibility(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6 h-[75vh] flex flex-col min-h-0">
-      <h2 className="text-2xl font-bold mb-4">📄 Document Verification</h2>
+    <div className="w-full h-full flex flex-col">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-lg">
+        <h2 className="text-3xl font-bold mb-2">📄 Document Verification & KYC</h2>
+        <p className="text-blue-100">
+          Upload all 5 required documents. All uploads are mandatory to proceed with eligibility check.
+        </p>
+      </div>
 
-      {error && (
-        <div className="mb-3 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-          {error}
-        </div>
-      )}
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-gray-50">
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mb-6 p-4 bg-red-50 border border-red-300 text-red-700 rounded-lg flex items-center space-x-3"
+          >
+            <AlertCircle className="w-6 h-6 flex-shrink-0" />
+            <p className="text-base font-medium">{error}</p>
+          </motion.div>
+        )}
 
-      {step === "upload" && (
-        <div className="space-y-4 flex-1 min-h-0">
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-            <input
-              type="file"
-              onChange={handleFileChange}
-              accept="image/*,.pdf"
-              className="hidden"
-              id="file-input"
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          {DOCUMENT_TYPES.map((docType) => (
+            <DocumentUploadCard
+              key={docType.id}
+              docType={docType}
+              isUploading={uploading[docType.id] || false}
+              progress={uploadProgress[docType.id] || 0}
+              uploadedFile={uploadedDocuments[docType.id]?.file}
+              extractedData={extractedData[docType.id]}
+              onUpload={(file) => handleUpload(file, docType.id)}
+              onRemove={() => removeDocument(docType.id)}
+              onDropZone={handleDropZone(docType.id)}
             />
-            <label
-              htmlFor="file-input"
-              className="cursor-pointer flex flex-col items-center"
-            >
-              <span className="text-4xl mb-2">📸</span>
-              <p className="text-gray-600">
-                {file ? file.name : "Click to upload or drag and drop"}
-              </p>
-              <p className="text-sm text-gray-400 mt-2">
-                PNG, JPG, PDF (max 5MB)
-              </p>
-            </label>
-          </div>
-
-          <button
-            onClick={handleUpload}
-            disabled={!file || isLoading}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-semibold"
-          >
-            {isLoading ? "Verifying..." : "Verify Document"}
-          </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {step === "review" && extractedData && (
-        <div className="flex-1 min-h-0 flex flex-col space-y-4">
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-            <h3 className="font-semibold text-green-800 mb-2">
-              ✓ Document Verified
-            </h3>
-            <div className="flex items-center gap-2 text-sm text-green-700">
-              <span className="inline-flex items-center px-2 py-0.5 rounded bg-green-100 text-green-800 border border-green-200">
-                {extractedData.document_type || "Unknown Document"}
-              </span>
+      {/* Upload Status Summary & Action Button */}
+      <div className="border-t bg-white p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h4 className="font-bold text-lg text-gray-900">
+                Upload Progress: {Object.keys(uploadedDocuments).length}/{DOCUMENT_TYPES.length} Documents
+              </h4>
+              <p className="text-sm text-gray-600 mt-1">
+                {Object.keys(uploadedDocuments).length === DOCUMENT_TYPES.length
+                  ? "✓ All documents uploaded! Ready for eligibility check."
+                  : `${DOCUMENT_TYPES.length - Object.keys(uploadedDocuments).length} documents remaining`}
+              </p>
+            </div>
+            <div className="text-4xl font-bold text-blue-600">
+              {Math.round(
+                (Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100
+              )}%
             </div>
           </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg flex-1 min-h-0 flex flex-col">
-            <h4 className="font-semibold mb-2">Extracted Information</h4>
-            <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-2">
-              {Object.entries(extractedData.fields || {}).map(
-                ([key, value]) => {
-                  const displayVal = Array.isArray(value)
-                    ? Array.isArray(value[0])
-                      ? value[0].join(", ")
-                      : value[0]
-                    : value;
-                  return (
-                    <div
-                      key={key}
-                      className="flex justify-between gap-4 text-sm"
-                    >
-                      <span className="text-gray-600 whitespace-nowrap">
-                        {key.replace(/_/g, " ").toUpperCase()}:
-                      </span>
-                      <span className="font-semibold text-right break-words">
-                        {displayVal}
-                      </span>
-                    </div>
-                  );
-                }
-              )}
-            </div>
+          <div className="w-full bg-gray-300 rounded-full h-3">
+            <motion.div
+              className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full"
+              initial={{ width: 0 }}
+              animate={{
+                width: `${(Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100}%`,
+              }}
+              transition={{ duration: 0.5 }}
+            />
           </div>
+        </motion.div>
 
-          <button
-            onClick={handlePredictEligibility}
-            disabled={isLoading}
-            className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-semibold"
-          >
-            {isLoading ? "Processing..." : "Continue to Eligibility Check"}
-          </button>
-        </div>
-      )}
-
-      {step === "predicted" && (
-        <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-          <h3 className="text-xl font-bold text-green-800 mb-2">
-            ✓ Verification Complete!
-          </h3>
-          <p className="text-green-700">
-            Your document has been verified and eligibility has been calculated.
-          </p>
-          <p className="text-sm text-green-600 mt-2">
-            Your PDF report has been generated and is ready for download.
-          </p>
-        </div>
-      )}
+        {/* Eligibility Check Button */}
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handlePredictEligibility}
+          disabled={!allDocumentsUploaded || checkingEligibility}
+          className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all ${
+            allDocumentsUploaded
+              ? "bg-gradient-to-r from-green-500 to-green-600 text-white hover:shadow-lg disabled:opacity-50"
+              : "bg-gray-300 text-gray-600 cursor-not-allowed"
+          }`}
+        >
+          {checkingEligibility ? (
+            <span className="flex items-center justify-center space-x-3">
+              <Loader className="w-6 h-6 animate-spin" />
+              <span>Checking Eligibility...</span>
+            </span>
+          ) : (
+            "Proceed to Eligibility Check"
+          )}
+        </motion.button>
+      </div>
     </div>
   );
 }
+
+// Sub-component for individual document upload
+const DocumentUploadCard = ({
+  docType,
+  isUploading,
+  progress,
+  uploadedFile,
+  extractedData,
+  onUpload,
+  onRemove,
+  onDropZone,
+}) => {
+  const { getRootProps, getInputProps, isDragActive, isDragReject } =
+    useDropzone({
+      onDrop: onDropZone,
+      accept: {
+        "image/*": [".jpeg", ".jpg", ".png"],
+        "application/pdf": [".pdf"],
+      },
+      multiple: false,
+      maxSize: 10 * 1024 * 1024,
+      disabled: isUploading,
+    });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="border border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 transition-colors"
+    >
+      {/* Card Header */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-gray-200">
+        <h4 className="font-semibold text-gray-900">{docType.label}</h4>
+        <p className="text-xs text-gray-600">{docType.description}</p>
+      </div>
+
+      {/* Upload Area or Status */}
+      <div className="p-4">
+        {uploadedFile ? (
+          <AnimatePresence mode="wait">
+            {isUploading ? (
+              <motion.div
+                key="uploading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center space-y-2"
+              >
+                <Loader className="w-8 h-8 text-blue-600 animate-spin" />
+                <p className="text-sm text-gray-600">Processing...</p>
+                <div className="w-full bg-gray-200 rounded-full h-1">
+                  <motion.div
+                    className="bg-blue-600 h-1 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="uploaded"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {uploadedFile.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatFileSize(uploadedFile.size)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={onRemove}
+                    className="text-gray-400 hover:text-red-600 transition-colors flex-shrink-0 ml-2"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {extractedData && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="mt-3 pt-3 border-t border-gray-200 space-y-1"
+                  >
+                    <p className="text-xs font-semibold text-green-700 mb-2">
+                      ✓ Data Extracted
+                    </p>
+                    {Object.entries(extractedData)
+                      .slice(0, 2)
+                      .map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="text-xs flex justify-between bg-green-50 px-2 py-1 rounded"
+                        >
+                          <span className="text-gray-600 truncate">
+                            {key.replace(/_/g, " ")}:
+                          </span>
+                          <span className="text-green-700 font-medium truncate ml-2">
+                            {String(value).slice(0, 15)}
+                            {String(value).length > 15 ? "..." : ""}
+                          </span>
+                        </div>
+                      ))}
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        ) : (
+          <motion.div
+            {...getRootProps()}
+            whileHover={{ scale: 1.02 }}
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
+              isDragActive && !isDragReject
+                ? "border-blue-400 bg-blue-50"
+                : isDragReject
+                ? "border-red-400 bg-red-50"
+                : "border-gray-300 hover:border-blue-400"
+            }`}
+          >
+            <input {...getInputProps()} />
+            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm font-medium text-gray-700">
+              Drop or click to upload
+            </p>
+            <p className="text-xs text-gray-500 mt-1">JPG, PNG, or PDF</p>
+          </motion.div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
