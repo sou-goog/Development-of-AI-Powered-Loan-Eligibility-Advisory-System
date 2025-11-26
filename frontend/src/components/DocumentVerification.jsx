@@ -21,7 +21,11 @@ const DOCUMENT_TYPES = [
     label: "Bank Statement",
     description: "Last 6 months statement",
   },
-  { id: "salary_slip", label: "Salary Slip", description: "Recent salary slip" },
+  {
+    id: "salary_slip",
+    label: "Salary Slip",
+    description: "Recent salary slip",
+  },
 ];
 
 export default function DocumentVerification({ applicationId, onVerified }) {
@@ -79,7 +83,7 @@ export default function DocumentVerification({ applicationId, onVerified }) {
           console.error("Document verification failed:", verifyError);
         }
 
-        const docLabel = DOCUMENT_TYPES.find(d => d.id === docType)?.label;
+        const docLabel = DOCUMENT_TYPES.find((d) => d.id === docType)?.label;
         toast.success(`${docLabel} uploaded successfully!`);
       } catch (error) {
         const status = error?.response?.status;
@@ -137,10 +141,19 @@ export default function DocumentVerification({ applicationId, onVerified }) {
     });
   };
 
-  const allDocumentsUploaded = DOCUMENT_TYPES.every((doc) =>
-    uploadedDocuments.hasOwnProperty(doc.id)
-  );
+  // Requirements:
+  // - At least one of: Aadhaar, PAN, KYC
+  // - At least one of: Bank Statement, Salary Slip
+  const GROUP_IDENTITY = ["aadhaar", "pan", "kyc"];
+  const GROUP_FINANCIAL = ["bank_statement", "salary_slip"];
 
+  const satisfiesGroup = (group) =>
+    group.some((id) =>
+      Object.prototype.hasOwnProperty.call(uploadedDocuments, id)
+    );
+
+  const requiredGroupsSatisfied =
+    satisfiesGroup(GROUP_IDENTITY) && satisfiesGroup(GROUP_FINANCIAL);
 
   const handlePredictEligibility = async () => {
     if (!allDocumentsUploaded) {
@@ -155,7 +168,9 @@ export default function DocumentVerification({ applicationId, onVerified }) {
       toast.success("Eligibility check completed!");
     } catch (err) {
       setError(err.response?.data?.detail || "Failed to predict eligibility");
-      toast.error(err.response?.data?.detail || "Failed to predict eligibility");
+      toast.error(
+        err.response?.data?.detail || "Failed to predict eligibility"
+      );
     } finally {
       setCheckingEligibility(false);
     }
@@ -164,9 +179,12 @@ export default function DocumentVerification({ applicationId, onVerified }) {
   return (
     <div className="w-full h-full flex flex-col">
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-lg">
-        <h2 className="text-3xl font-bold mb-2">📄 Document Verification & KYC</h2>
+        <h2 className="text-3xl font-bold mb-2">
+          📄 Document Verification & KYC
+        </h2>
         <p className="text-blue-100">
-          Upload all 5 required documents. All uploads are mandatory to proceed with eligibility check.
+          Upload all 5 required documents. All uploads are mandatory to proceed
+          with eligibility check.
         </p>
       </div>
 
@@ -210,18 +228,22 @@ export default function DocumentVerification({ applicationId, onVerified }) {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h4 className="font-bold text-lg text-gray-900">
-                Upload Progress: {Object.keys(uploadedDocuments).length}/{DOCUMENT_TYPES.length} Documents
+                Upload Progress: {Object.keys(uploadedDocuments).length}/
+                {DOCUMENT_TYPES.length} Documents
               </h4>
               <p className="text-sm text-gray-600 mt-1">
-                {Object.keys(uploadedDocuments).length === DOCUMENT_TYPES.length
-                  ? "✓ All documents uploaded! Ready for eligibility check."
-                  : `${DOCUMENT_TYPES.length - Object.keys(uploadedDocuments).length} documents remaining`}
+                {requiredGroupsSatisfied
+                  ? "✓ Required documents uploaded! Ready for eligibility check."
+                  : `Please upload at least one ID (Aadhaar, PAN or KYC) and one financial proof (Bank statement or Salary slip).`}
               </p>
             </div>
             <div className="text-4xl font-bold text-blue-600">
               {Math.round(
-                (Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100
-              )}%
+                (Object.keys(uploadedDocuments).length /
+                  DOCUMENT_TYPES.length) *
+                  100
+              )}
+              %
             </div>
           </div>
           <div className="w-full bg-gray-300 rounded-full h-3">
@@ -229,7 +251,11 @@ export default function DocumentVerification({ applicationId, onVerified }) {
               className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full"
               initial={{ width: 0 }}
               animate={{
-                width: `${(Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100}%`,
+                width: `${
+                  (Object.keys(uploadedDocuments).length /
+                    DOCUMENT_TYPES.length) *
+                  100
+                }%`,
               }}
               transition={{ duration: 0.5 }}
             />
@@ -241,9 +267,9 @@ export default function DocumentVerification({ applicationId, onVerified }) {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handlePredictEligibility}
-          disabled={!allDocumentsUploaded || checkingEligibility}
+          disabled={!requiredGroupsSatisfied || checkingEligibility}
           className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all ${
-            allDocumentsUploaded
+            requiredGroupsSatisfied
               ? "bg-gradient-to-r from-green-500 to-green-600 text-white hover:shadow-lg disabled:opacity-50"
               : "bg-gray-300 text-gray-600 cursor-not-allowed"
           }`}

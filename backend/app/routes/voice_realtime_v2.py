@@ -138,12 +138,13 @@ def resolve_piper_model_setting() -> Dict[str, Optional[str]]:
     # If absolute or relative path provided
     model_path = Path(model_setting)
     if model_path.exists():
-        return {"model_arg": ["--model", str(model_path)], "data_dir_arg": None}
+        # Use short flag '-m' which is accepted by Piper CLI implementations
+        return {"model_arg": ["-m", str(model_path)], "data_dir_arg": None}
 
     # Check backend-local piper_voices/<model>.onnx
     candidate = backend_root / "piper_voices" / f"{model_setting}.onnx"
     if candidate.exists():
-        return {"model_arg": ["--model", str(candidate)], "data_dir_arg": None}
+        return {"model_arg": ["-m", str(candidate)], "data_dir_arg": None}
 
     # If a piper_voices directory exists, use it as data-dir
     voices_dir = backend_root / "piper_voices"
@@ -407,7 +408,8 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
             model_arg = model_info.get("data_dir_arg")
         else:
             # Fallback: pass the PIPER_MODEL raw value as the model argument (some installs use model tags)
-            model_arg = ["--model", PIPER_MODEL]
+                # Use short flag '-m' for compatibility
+                model_arg = ["-m", PIPER_MODEL]
 
         # Try Piper CLI invocation with resolved args
         proc = await asyncio.create_subprocess_exec(

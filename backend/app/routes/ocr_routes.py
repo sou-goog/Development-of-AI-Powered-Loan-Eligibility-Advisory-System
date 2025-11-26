@@ -197,9 +197,49 @@ async def verify_document(
             logger.warning(f"OCR->Application mapping warnings: {map_e}")
 
         # Update application with document info
+        # Preserve previously uploaded documents in extracted_data['uploaded_documents']
+        prev = app.extracted_data or {}
+        uploaded = prev.get("uploaded_documents", []) if isinstance(prev, dict) else []
+        # Normalize doc type ids for grouping
+        doc_type = (extracted_data.get("document_type") or "").strip()
+        # Map common doc_type strings to internal ids
+        doc_type_map = {
+            "Aadhaar": "aadhaar",
+            "Aadhaar Card": "aadhaar",
+            "PAN": "pan",
+            "PAN Card": "pan",
+            "KYC": "kyc",
+            "Bank Statement": "bank_statement",
+            "Salary Slip": "salary_slip",
+        }
+        mapped = doc_type_map.get(doc_type, doc_type.lower().replace(" ", "_") if doc_type else None)
+        if mapped:
+            # store rich metadata for each uploaded document (id, filename, path, uploaded_at)
+            from datetime import datetime
+            meta_obj = {
+                "id": mapped,
+                "filename": file.filename,
+                "path": str(file_path),
+                "uploaded_at": datetime.utcnow().isoformat() + "Z",
+            }
+            # Avoid duplicates by id
+            if not any((isinstance(x, dict) and x.get("id") == mapped) or (isinstance(x, str) and x == mapped) for x in uploaded):
+                uploaded.append(meta_obj)
+
+        # Merge extracted data and uploaded list
+        merged_extracted = dict(prev or {})
+        merged_extracted.update(extracted_data or {})
+        merged_extracted["uploaded_documents"] = uploaded
+
         app.document_path = str(file_path)
-        app.document_verified = True
-        app.extracted_data = extracted_data
+        app.extracted_data = merged_extracted
+
+        # Determine verification: require one identity doc and one financial doc
+        identity_group = {"aadhaar", "pan", "kyc"}
+        financial_group = {"bank_statement", "salary_slip"}
+        has_identity = any(d in identity_group for d in uploaded)
+        has_financial = any(d in financial_group for d in uploaded)
+        app.document_verified = bool(has_identity and has_financial)
         db.commit()
         
         # Optionally generate a report if eligibility already exists
@@ -235,17 +275,17 @@ async def verify_document(
         except Exception as rep_e:
             logger.warning(f"Report generation after verify skipped: {rep_e}")
 
-        logger.info(f"Document verified for application {application_id}")
+        logger.info(f"Document processed for application {application_id}; verified={app.document_verified}")
         
         status = "success" if is_valid else "quality_warning"
         flat = {
-            "document_type": extracted_data.get("document_type"),
-            "fields": extracted_data.get("fields", {}),
-            "full_text": extracted_data.get("full_text", ""),
+            "document_type": merged_extracted.get("document_type"),
+            "fields": merged_extracted.get("fields", {}),
+            "full_text": merged_extracted.get("full_text", ""),
         }
         return {
             **flat,
-            "extracted_data": extracted_data,
+            "extracted_data": merged_extracted,
             "confidence_scores": {
                 "overall": 0.85,
                 "text_extraction": 0.90

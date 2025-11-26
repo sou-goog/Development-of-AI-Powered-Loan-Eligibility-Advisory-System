@@ -125,6 +125,8 @@ class ChatResponse(BaseModel):
     # Optional echo of what was collected this turn
     collected_fields: Optional[List[str]] = None
     collected_values: Optional[Dict[str, Any]] = None
+    # Whether the assistant's reply includes a follow-up question
+    ask_followup: Optional[bool] = False
 
 
 # Voice Schemas

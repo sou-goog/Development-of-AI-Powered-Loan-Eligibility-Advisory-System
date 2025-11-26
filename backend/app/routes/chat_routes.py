@@ -59,8 +59,8 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
         # Choose provider per request if provided; else fall back to default
         svc = get_llm_service(provider_override=request.provider) if request.provider else llm_service
 
-        # Generate AI response based on conversation context
-        ai_response = _generate_conversational_response(request.message, conversation_context, application, svc)
+        # Generate AI response based on conversation context (include DB/user for multi-turn history)
+        ai_response = _generate_conversational_response(request.message, conversation_context, application, svc, db=db, user_id=user_id)
 
         # Handle specific actions based on conversation context
         action_result = None
@@ -179,6 +179,111 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
             status_code=500,
             detail="Failed to process message"
         )
+
+
+@router.post("/open", response_model=ChatResponse)
+async def open_chat(request: ChatRequest, http_req: Request, db: Session = Depends(get_db)):
+    """
+    Open-ended chat endpoint: accept any question and let the LLM respond freely.
+
+    The assistant is encouraged to ask clarifying follow-up questions when helpful.
+    This endpoint does not trigger application-specific actions; it's for general Q&A and follow-ups.
+    """
+    try:
+        svc = get_llm_service(provider_override=request.provider) if request.provider else llm_service
+
+        # Identify current user (optional) for open chat history
+        user_id = None
+        try:
+            auth = http_req.headers.get("authorization") or http_req.headers.get("Authorization")
+            if auth and auth.lower().startswith("bearer "):
+                token = auth.split(" ", 1)[1].strip()
+                decoded = decode_token(token)
+                if decoded and decoded.get("email"):
+                    user = db.query(User).filter(User.email == decoded["email"]).first()
+                    if user:
+                        user_id = user.id
+        except Exception:
+            pass
+
+        # Construct an explicit system prompt that encourages the assistant to ask clarifying
+        # questions and interact with the user conversationally.
+        system_prompt = (
+            "You are a helpful, concise AI assistant. Answer the user's question clearly. "
+            "If the user's question lacks necessary details, ask one concise clarifying question. "
+            "Do not take actions on behalf of the user; simply ask or answer. Keep replies friendly and short."
+        )
+
+        # Pass lightweight application context only if provided
+        context_data = None
+        if request.application_id:
+            application = db.query(LoanApplication).filter(LoanApplication.id == request.application_id).first()
+            if application:
+                context_data = {
+                    "full_name": application.full_name,
+                    "loan_amount": application.loan_amount,
+                    "status": application.approval_status,
+                }
+
+        # Use the LLM service to generate response using system prompt + user message
+        if not svc.health():
+            # If LLM unhealthy, return fallback
+            reply = "Sorry, the AI service is currently unavailable. Please try again later."
+        else:
+            # Attempt to include system prompt if the provider supports it
+            # Include recent conversation history as part of context when available
+            history = []
+            try:
+                if db is not None:
+                    history = _get_conversation_history(db, application, user_id, limit=8)
+            except Exception:
+                history = []
+
+            merged_context = (context_data or {}).copy() if context_data else {}
+            if history:
+                merged_context["history"] = history
+
+            try:
+                # Some services accept (prompt, context) shapes; the service implementations handle it
+                reply = svc.generate(request.message, context=merged_context or {}, system_prompt=system_prompt)
+            except TypeError:
+                # Fallback for services that don't support system_prompt parameter
+                combined = f"{system_prompt}\n\nUser: {request.message}"
+                reply = svc.generate(combined, context=merged_context or {})
+
+        # Heuristic: if reply ends with a question mark or contains a short question, mark ask_followup
+        ask_followup = False
+        try:
+            clean = (reply or "").strip()
+            if clean.endswith("?") or "?" in clean.splitlines()[:2]:
+                ask_followup = True
+        except Exception:
+            ask_followup = False
+
+        # Persist chat session minimally for history
+        try:
+            chat_session = ChatSession(
+                user_id=user_id,
+                application_id=request.application_id,
+                messages=json.dumps([
+                    {"role": "user", "content": request.message},
+                    {"role": "assistant", "content": reply}
+                ])
+            )
+            db.add(chat_session)
+            db.commit()
+        except Exception:
+            logger.debug("Failed to persist open chat session; continuing")
+
+        return {
+            "message": reply,
+            "application_id": request.application_id,
+            "ask_followup": ask_followup,
+        }
+
+    except Exception as e:
+        logger.error(f"Open chat error: {e}")
+        raise HTTPException(status_code=500, detail="Open chat failed")
 
 
 @router.get("/health")
@@ -432,7 +537,46 @@ def _get_last_assistant_question_key(db: Session, application, user_id: int | No
     return ""
 
 
-def _generate_conversational_response(message: str, context: dict, application, svc) -> str:
+def _get_conversation_history(db: Session, application, user_id: int | None, limit: int = 6) -> list:
+    """Return the last `limit` messages (role/content) for this application or user.
+
+    Messages are returned in chronological order (oldest first).
+    """
+    history = []
+    try:
+        q = db.query(ChatSession)
+        if application and getattr(application, 'id', None):
+            q = q.filter(ChatSession.application_id == application.id)
+        elif user_id:
+            q = q.filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+        else:
+            return []
+
+        sessions = q.order_by(ChatSession.created_at.desc()).limit(10).all()
+        # Collect messages from most recent sessions, then take last `limit` messages overall
+        msgs = []
+        for s in sessions:
+            try:
+                mlist = json.loads(s.messages) if isinstance(s.messages, str) else (s.messages or [])
+                for m in mlist:
+                    if isinstance(m, dict) and m.get('role') and m.get('content'):
+                        msgs.append({'role': m['role'], 'content': m['content']})
+            except Exception:
+                continue
+
+        # msgs currently newest-first across sessions; reverse to chronological
+        msgs = list(reversed(msgs))
+        # Return the last `limit` messages
+        if len(msgs) <= limit:
+            history = msgs
+        else:
+            history = msgs[-limit:]
+    except Exception:
+        return []
+    return history
+
+
+def _generate_conversational_response(message: str, context: dict, application, svc, db: Session = None, user_id: int | None = None) -> str:
     """
     Generate a conversational AI response based on context
     """
@@ -568,7 +712,20 @@ def _generate_conversational_response(message: str, context: dict, application, 
         if not svc.health():
             response = _fallback_single_question(context, application)
         else:
-            response = svc.generate(message, context_data)
+            # Include recent conversation history as part of context if db is available
+            history = []
+            try:
+                if db is not None:
+                    history = _get_conversation_history(db, application, user_id, limit=8)
+            except Exception:
+                history = []
+
+            # Merge context_data with history
+            merged_context = (context_data or {}).copy() if context_data else {}
+            if history:
+                merged_context["history"] = history
+
+            response = svc.generate(message, merged_context)
             # Guard against provider errors with a helpful fallback
             if not response or response.strip() == "" or response.lower().startswith("sorry, i'm having trouble responding right now"):
                 response = _fallback_single_question(context, application)
