@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import DocumentVerification from "../components/DocumentVerification";
-import { loanAPI, reportAPI } from "../utils/api";
+import { loanAPI } from "../utils/api";
 import { toast } from "react-toastify";
 
 const Verification = () => {
@@ -10,19 +10,38 @@ const Verification = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [voiceData, setVoiceData] = useState(null);
+  const [fromVoiceAgent, setFromVoiceAgent] = useState(false);
+
   useEffect(() => {
-    // Pre-fill applicationId from query string if present: /verification?applicationId=123
     const params = new URLSearchParams(location.search);
     const qId = params.get("applicationId");
+    const source = params.get("source");
+    
     if (qId && !applicationId) {
       setApplicationId(qId);
       setLockedFromQuery(true);
+    }
+    
+    if (source === "voice") {
+      setFromVoiceAgent(true);
+      const name = params.get("name");
+      const income = params.get("income");
+      const credit = params.get("credit");
+      const loan = params.get("loan");
+      
+      setVoiceData({
+        name: name || "",
+        monthly_income: parseFloat(income) || 0,
+        credit_score: parseInt(credit) || 0,
+        loan_amount: parseFloat(loan) || 0
+      });
     }
   }, [location.search, applicationId]);
 
   const handleVerificationSuccess = (data) => {
     toast.success("Eligibility check completed!");
-    navigate(`/apply?view=form`, {
+    navigate(/apply?view=form, {
       state: { eligibilityResult: data, applicationId },
     });
   };
@@ -37,6 +56,22 @@ const Verification = () => {
           <p className="mt-2 text-lg text-gray-600">
             Upload all required documents to proceed with loan eligibility
           </p>
+          {fromVoiceAgent && voiceData && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-medium text-blue-900 mb-2">
+                 Voice Agent Application
+              </p>
+              <div className="text-xs text-blue-700 space-y-1">
+                <p>Applicant: {voiceData.name}</p>
+                <p>Monthly Income: ${voiceData.monthly_income.toLocaleString()}</p>
+                <p>Credit Score: {voiceData.credit_score}</p>
+                <p>Loan Amount: ${voiceData.loan_amount.toLocaleString()}</p>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">
+                After uploading all documents, eligibility will be automatically checked
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 bg-white rounded-lg shadow-xl overflow-hidden flex flex-col">

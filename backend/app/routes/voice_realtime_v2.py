@@ -462,56 +462,47 @@ def get_ml_service() -> Optional[MLModelService]:
         return None
 
 
-async def predict_loan_eligibility(structured_data: Dict, ml_service: Optional[MLModelService]) -> Optional[float]:
+async def predict_loan_eligibility(structured_data: Dict, ml_service: Optional[MLModelService]) -> Optional[Dict]:
     """
     Run ML prediction for loan eligibility.
     
     Args:
-        structured_data: Extracted loan application fields
+        structured_data: Extracted loan application fields (must include document_verified=True)
         ml_service: ML model service instance
         
     Returns:
-        Eligibility probability (0-1) or None
+        Prediction result dictionary or None
     """
     if not ml_service:
+        logger.warning("ML service not available")
+        return None
+    
+    # Check document verification first
+    if not structured_data.get('document_verified', False):
+        logger.warning("Document not verified - skipping prediction")
         return None
     
     # Check required fields
     required = ["monthly_income", "credit_score", "loan_amount"]
     if not all(k in structured_data for k in required):
+        logger.warning(f"Missing required fields. Have: {list(structured_data.keys())}")
         return None
     
     try:
-        # Prepare features for prediction
+        # Prepare features for prediction with the simplified 3-field model
         features = {
-            'Age': 35,  # Default (could ask in conversation)
-            'Gender': 'Male',  # Default
-            'Marital_Status': 'Single',  # Default
-            'Employment_Type': 'Salaried',  # Default
-            'Monthly_Income': float(structured_data['monthly_income']),
-            'Loan_Amount_Requested': float(structured_data['loan_amount']),
-            'Credit_Score': int(structured_data['credit_score']),
-            'Existing_EMI': 0,  # Default
-            'Loan_Tenure_Years': 5,  # Default
-            'Dependents': 0,  # Default
-            'Region': 'Urban',  # Default
-            'Loan_Purpose': 'Personal',  # Default
-            'Total_Withdrawals': 5000,  # Default
-            'Total_Deposits': 6000,  # Default
-            'Avg_Balance': 5000,  # Default
-            'Bounced_Transactions': 0,  # Default
-            'Account_Age_Months': 24,  # Default
-            'Salary_Credit_Frequency': 'Monthly',  # Default
-            'Total_Liabilities': 0,  # Default
-            'Debt_to_Income_Ratio': 0.0,  # Default
-            'Bank_Verified': True,
-            'Document_Verified': True,
-            'Voice_Verified': True,
+            'monthly_income': float(structured_data['monthly_income']),
+            'credit_score': int(structured_data['credit_score']),
+            'loan_amount': float(structured_data['loan_amount']),
         }
         
-        # Run prediction
+        logger.info(f"Running ML prediction with features: {features}")
+        
+        # Run prediction using the trained model
         result = ml_service.predict_eligibility(features)
-        return result.get('approval_probability', 0.0)
+        
+        logger.info(f"ML prediction result: {result}")
+        return result
         
     except Exception as e:
         logger.error(f"ML prediction error: {e}", exc_info=True)
@@ -624,6 +615,34 @@ async def voice_stream_endpoint(websocket: WebSocket):
         conversation_history.append({"role": "user", "content": text})
         user_transcript_buffer += " " + text
         
+        # Check if this is a document verification message
+        if "document verified" in text.lower():
+            logger.info("📄 Received document verification confirmation!")
+            structured_data['document_verified'] = True
+            
+            # Immediately run prediction
+            prediction_result = await predict_loan_eligibility(structured_data, ml_service)
+            if prediction_result is not None:
+                eligibility_score = prediction_result.get('eligibility_score', 0.0)
+                logger.info(f"✅ Eligibility result after document verification: {eligibility_score:.2%}")
+                await websocket.send_json({
+                    "type": "eligibility_result",
+                    "data": {
+                        "probability": eligibility_score,
+                        "approved": prediction_result.get('eligibility_status') == 'eligible',
+                        "confidence": prediction_result.get('confidence', 0.0),
+                        "risk_level": prediction_result.get('risk_level', 'unknown'),
+                        "recommendations": prediction_result.get('recommendations', [])
+                    }
+                })
+                # Send acknowledgment message
+                await websocket.send_json({
+                    "type": "ai_token",
+                    "data": "Perfect! Your document has been verified. Based on your information, "
+                })
+            # Don't process as normal chat message
+            text = ""
+        
         # Extract structured data
         old_data = structured_data.copy()
         structured_data = extract_structured_data(text, structured_data)
@@ -722,29 +741,47 @@ async def voice_stream_endpoint(websocket: WebSocket):
         if ai_message.strip():
             conversation_history.append({"role": "assistant", "content": ai_message})
         
-        # Check if we have all required fields for prediction
-        required_fields = ["monthly_income", "credit_score", "loan_amount"]
-        logger.info(f"Checking for prediction - Current data: {structured_data}")
+        # Check if we have all required fields (4 details)
+        required_fields = ["name", "monthly_income", "credit_score", "loan_amount"]
+        logger.info(f"Checking for all 4 details - Current data: {structured_data}")
         logger.info(f"Required fields: {required_fields}")
-        logger.info(f"Has all required? {all(k in structured_data for k in required_fields)}")
+        has_all_fields = all(k in structured_data for k in required_fields)
+        logger.info(f"Has all required? {has_all_fields}")
         
-        if all(k in structured_data for k in required_fields):
-            logger.info("🎯 All required fields present! Running ML prediction...")
+        # Check if document is already verified - if yes, run prediction
+        if "document_verified" in structured_data and structured_data["document_verified"] is True:
+            logger.info("📄 Document verified! Running ML prediction...")
             # Run ML prediction
-            eligibility = await predict_loan_eligibility(structured_data, ml_service)
-            if eligibility is not None:
-                logger.info(f"✅ Eligibility result: {eligibility:.2%}")
+            prediction_result = await predict_loan_eligibility(structured_data, ml_service)
+            if prediction_result is not None:
+                eligibility_score = prediction_result.get('eligibility_score', 0.0)
+                logger.info(f"✅ Eligibility result: {eligibility_score:.2%}")
                 await websocket.send_json({
                     "type": "eligibility_result",
                     "data": {
-                        "probability": eligibility,
-                        "approved": eligibility >= 0.5,
-                        "confidence": eligibility if eligibility >= 0.5 else (1 - eligibility)
+                        "probability": eligibility_score,
+                        "approved": prediction_result.get('eligibility_status') == 'eligible',
+                        "confidence": prediction_result.get('confidence', 0.0),
+                        "risk_level": prediction_result.get('risk_level', 'unknown'),
+                        "recommendations": prediction_result.get('recommendations', [])
                     }
                 })
-                logger.info(f"📊 Sent eligibility result to frontend: {eligibility:.2%}")
+                logger.info(f"📊 Sent eligibility result to frontend: {eligibility_score:.2%}")
             else:
                 logger.warning("⚠️ Eligibility prediction returned None")
+        
+        # Check if all 4 fields are collected but document NOT yet verified
+        elif has_all_fields and not structured_data.get("document_verified", False):
+            logger.info("✅ All 4 details collected! Requesting document verification...")
+            
+            # Send message to frontend to trigger document verification UI
+            await websocket.send_json({
+                "type": "document_verification_required",
+                "data": {
+                    "message": "Thank you! I have collected all your details. Please verify your document to proceed with the loan eligibility prediction.",
+                    "structured_data": structured_data
+                }
+            })
         
         # Log to Supabase
         if supabase:
