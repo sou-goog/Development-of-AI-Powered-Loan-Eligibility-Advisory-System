@@ -41,7 +41,7 @@ const Verification = () => {
 
   const handleVerificationSuccess = (data) => {
     toast.success("Eligibility check completed!");
-    navigate(/apply?view=form, {
+    navigate(`/apply?view=form`, {
       state: { eligibilityResult: data, applicationId },
     });
   };
