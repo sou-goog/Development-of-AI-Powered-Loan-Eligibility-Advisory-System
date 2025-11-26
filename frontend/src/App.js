@@ -1,107 +1,49 @@
+// src/App.js
 import React from "react";
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// Components
-import Navbar from "./components/Navbar";
-import Home from "./pages/Home";
-import AuthPage from "./pages/AuthPage";
-import Chatbot from "./components/Chatbot";
-import ApplyPage from "./pages/ApplyPage";
-import Verification from "./pages/Verification";
-import Manager from "./pages/Manager";
+// Pages
+import Login from "./pages/Login";
+import MainDashboard from "./pages/MainDashboard";
+import LoanAnalytics from "./pages/LoanAnalytics";
+import MLPerformance from "./pages/MLPerformance";
+import VoiceAnalytics from "./pages/VoiceAnalytics";
+import ApplicationsTable from "./pages/ApplicationsTable";
+import Transcripts from "./pages/Transcripts";
+import SystemSettings from "./pages/SystemSettings";
+import ProjectOverview from "./pages/ProjectOverview";
 
-// Utils
-import { auth } from "./utils/auth";
+// ⭐ NEW PAGE IMPORT
+import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 
 function App() {
-  // Protected Route Component
-  const ProtectedRoute = ({ children, requireManager = false }) => {
-    const authed = auth.isAuthenticated();
-    const manager = auth.isManager();
-    if (!authed) {
-      return <Navigate to="/auth" replace />;
-    }
-    if (requireManager && !manager) {
-      return <Navigate to="/" replace />;
-    }
-    return children;
-  };
-
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route
-            path="/auth"
-            element={
-              auth.isAuthenticated() ? (
-                <Navigate
-                  to={auth.isManager() ? "/manager" : "/apply"}
-                  replace
-                />
-              ) : (
-                <AuthPage />
-              )
-            }
-          />
-          <Route
-            path="/apply"
-            element={
-              <ProtectedRoute>
-                <ApplyPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/apply-chat"
-            element={
-              <ProtectedRoute>
-                <div className="container mx-auto px-4 py-8">
-                  <Chatbot />
-                </div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/verify"
-            element={
-              <ProtectedRoute>
-                <Verification />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/manager"
-            element={
-              <ProtectedRoute requireManager={true}>
-                <Manager />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        <ToastContainer
-          position="top-right"
-          autoClose={5000}
-          hideProgressBar={false}
-          newestOnTop={false}
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
+    <BrowserRouter>
+      <Routes>
+        {/* Login Pages */}
+        <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+
+        {/* Dashboard Pages */}
+        <Route path="/dashboard" element={<MainDashboard />} />
+        <Route path="/loan-analytics" element={<LoanAnalytics />} />
+        <Route path="/ml-performance" element={<MLPerformance />} />
+        <Route path="/voice-analytics" element={<VoiceAnalytics />} />
+        <Route path="/applications" element={<ApplicationsTable />} />
+        <Route path="/transcripts" element={<Transcripts />} />
+        <Route path="/settings" element={<SystemSettings />} />
+        <Route path="/overview" element={<ProjectOverview />} />
+
+        {/* ⭐ NEW LOAN REJECTION DASHBOARD ROUTE */}
+        <Route
+          path="/loan-rejection/:userId"
+          element={<LoanRejectionDashboard />}
         />
-      </div>
-    </Router>
+
+        {/* Wrong URL → Redirect to login */}
+        <Route path="*" element={<Navigate to="/login" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
