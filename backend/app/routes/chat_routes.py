@@ -960,3 +960,4 @@ def _to_structured_suggestions(suggestions: list, context: dict | None) -> list:
             sid = f"provide_{label[12:].strip().replace(' ', '_')}"
         structured.append({"id": sid or "other", "label": label})
     return structured
+
