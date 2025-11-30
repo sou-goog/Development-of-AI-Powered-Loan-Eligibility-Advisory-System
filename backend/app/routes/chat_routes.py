@@ -18,6 +18,124 @@ import json
 import re
 import os
 
+
+def text_to_number(text: str) -> int | None:
+    """
+    Convert a textual number to an integer.
+    Supports digits with commas/currency, plain English words, and Indian units 'lakh'/'crore'.
+    Returns integer or None if no sensible number found.
+    """
+    if not text:
+        return None
+
+    s = str(text).lower().strip()
+
+    # Strip currency symbols and commas
+    s_clean = re.sub(r'[₹$,]', '', s)
+
+    # Direct digits fallback (e.g., "120000" or "1,20,000")
+    digit_match = re.search(r'(\d[\d,]*)', s_clean)
+    if digit_match:
+        try:
+            # remove commas then int
+            val = int(digit_match.group(1).replace(',', ''))
+            return val
+        except Exception:
+            pass
+
+    # Handle explicit unit words attached to numerals or words (e.g., "twelve lakh")
+    unit_match = re.search(r'([a-z\-\s]+|\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', s_clean)
+    if unit_match:
+        num_part = unit_match.group(1).strip()
+        unit = unit_match.group(2)
+        # try parse num_part as digits first
+        try:
+            amt = float(num_part)
+        except Exception:
+            amt = _words_to_number(num_part)
+        if amt is None:
+            return None
+        mult = 100000 if 'lakh' in unit else 10000000
+        try:
+            return int(round(amt * mult))
+        except Exception:
+            return None
+
+    # Try converting pure-word numbers (e.g., "one hundred twenty five thousand")
+    word_only = re.fullmatch(r'[a-z\-\s]+', s_clean)
+    if word_only:
+        val = _words_to_number(s_clean)
+        if val is not None:
+            return val
+
+    return None
+
+
+def _words_to_number(text: str) -> int | None:
+    """
+    Convert English number words to integer. Handles units up to crores (Indian scale).
+    This is a lightweight parser covering common cases like "twelve lakh", "one hundred twenty three thousand".
+    Returns None if parsing fails.
+    """
+    if not text:
+        return None
+
+    units = {
+        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+        'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
+        'nineteen': 19
+    }
+    tens = {
+        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
+        'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90
+    }
+    scales = {
+        'hundred': 100,
+        'thousand': 1000,
+        'lakh': 100000,
+        'lakhs': 100000,
+        'crore': 10000000,
+        'crores': 10000000
+    }
+
+    # Normalize hyphens and remove 'and'
+    txt = text.replace('-', ' ').replace(' and ', ' ')
+    parts = [p for p in txt.split() if p]
+    if not parts:
+        return None
+
+    total = 0
+    current = 0
+    for word in parts:
+        if word in units:
+            current += units[word]
+        elif word in tens:
+            current += tens[word]
+        elif word == 'hundred':
+            if current == 0:
+                current = 1
+            current *= scales[word]
+        elif word in scales and word != 'hundred':
+            # multiply current (or 1) by scale and add to total
+            if current == 0:
+                current = 1
+            current *= scales[word]
+            total += current
+            current = 0
+        else:
+            # unknown token — parsing fails gracefully
+            try:
+                # try numeric parse fallback
+                n = float(word)
+                current += int(n)
+            except Exception:
+                return None
+
+    return total + current
+
+
 logger = get_logger(__name__)
 router = APIRouter()
 
@@ -104,6 +222,51 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
             "application_id": application.id,
             "ask_followup": True,
         }
+
+    # -------------------------------------------------------------------------
+    # FALLBACK: if provider did not extract structured fields, attempt local
+    # inference (handles spelled-out numbers like "twelve lakh") and update
+    # the application. Then generate a friendly acknowledgement reply.
+    # -------------------------------------------------------------------------
+    try:
+        if not extracted:
+            assistant_prompt = _get_last_assistant_prompt(db, application, user_id)
+            inferred = _infer_from_last_question(message, assistant_prompt)
+            if not inferred:
+                # As a final attempt, try extracting with the message parser
+                inferred = _extract_data_from_message(message)
+
+            if inferred:
+                # Apply inferred fields to application and commit via collector
+                try:
+                    details = await _collect_applicant_details(message, application, db, user_id)
+                except Exception:
+                    details = {
+                        "new_fields": inferred,
+                        "missing_fields": _get_missing_fields(application)
+                    }
+
+                # Build a conversational acknowledgement and next question
+                context2 = {
+                    "intent": "providing_info",
+                    "collected_data": details.get("new_fields", {}),
+                    "missing_fields": details.get("missing_fields", [])
+                }
+                # Generate an assistant-style response locally if possible
+                try:
+                    reply_local = _generate_conversational_response(message, context2, application, svc, db, user_id)
+                    if reply_local:
+                        reply = reply_local
+                        ask_followup = True if context2.get("missing_fields") else False
+                except Exception:
+                    # keep provider reply if generation fails
+                    pass
+                # Ensure extracted contains the inferred values so downstream logic persists them
+                extracted = extracted or {}
+                extracted.update(inferred)
+    except Exception:
+        # Non-fatal: proceed with provider reply
+        pass
 
     # -------------------------------------------------------------------------
     # APPLY EXTRACTED FIELDS
@@ -327,6 +490,10 @@ def _infer_from_last_question(user_message: str, assistant_prompt: str) -> dict:
             return {"annual_income": int(round(amt * mult))}
         if digits and 4 <= len(digits) <= 8:
             return {"annual_income": int(digits)}
+        # Try parsing spelled-out numbers like "twelve lakh" or "one hundred twenty five thousand"
+        n = text_to_number(user_message)
+        if n and n >= 1000:
+            return {"annual_income": int(n)}
     # Loan amount
     if "loan amount" in assistant_prompt.lower():
         if unit_match:
@@ -335,12 +502,19 @@ def _infer_from_last_question(user_message: str, assistant_prompt: str) -> dict:
             return {"loan_amount": int(round(amt * mult))}
         if digits and 4 <= len(digits) <= 8:
             return {"loan_amount": int(digits)}
+        n = text_to_number(user_message)
+        if n and n >= 1000:
+            return {"loan_amount": int(n)}
     # Credit score
     if "credit score" in assistant_prompt.lower():
         if digits and len(digits) == 3:
             val = int(digits)
             if 300 <= val <= 900:
                 return {"credit_score": val}
+        # spelled-out credit scores like "six hundred and fifty"
+        n = text_to_number(user_message)
+        if n and 300 <= n <= 900:
+            return {"credit_score": int(n)}
     return {}
 
 
@@ -813,6 +987,15 @@ def _extract_data_from_message(message: str) -> dict:
                 if group and len(group) >= 4:
                     extracted["annual_income"] = int(group)
                     break
+        # Handle spelled-out numbers with units (e.g., "twelve lakh")
+        if "annual_income" not in extracted:
+            word_unit = re.search(r'([a-z\-\s]{3,})\s*(lakh|lakhs|crore|crores)', message_lower)
+            if word_unit:
+                amount_words = word_unit.group(1).strip()
+                val = _words_to_number(amount_words)
+                if val is not None:
+                    mult = 100000 if 'lakh' in word_unit.group(2) else 10000000
+                    extracted["annual_income"] = int(round(val * mult))
 
     # Loan amount patterns
     unit_loan = re.search(r'(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', message_lower)
@@ -828,6 +1011,15 @@ def _extract_data_from_message(message: str) -> dict:
                 if group and len(group) >= 4:
                     extracted["loan_amount"] = int(group)
                     break
+        # spelled-out loan amounts like "two lakh fifty thousand"
+        if "loan_amount" not in extracted:
+            word_unit_loan = re.search(r'([a-z\-\s]{3,})\s*(lakh|lakhs|crore|crores)', message_lower)
+            if word_unit_loan:
+                words = word_unit_loan.group(1).strip()
+                val = _words_to_number(words)
+                if val is not None:
+                    mult = 100000 if 'lakh' in word_unit_loan.group(2) else 10000000
+                    extracted["loan_amount"] = int(round(val * mult))
 
     # Credit score patterns
     credit_match = re.search(r'credit.*?(\d{3})|score.*?(\d{3})', message_lower)
@@ -836,6 +1028,11 @@ def _extract_data_from_message(message: str) -> dict:
             if group and 300 <= int(group) <= 850:
                 extracted["credit_score"] = int(group)
                 break
+    else:
+        # spelled-out credit scores
+        cs = text_to_number(message_lower)
+        if cs and 300 <= cs <= 900:
+            extracted["credit_score"] = int(cs)
 
     # Phone number
     phone_match = re.search(r'(\d{10})', message)
