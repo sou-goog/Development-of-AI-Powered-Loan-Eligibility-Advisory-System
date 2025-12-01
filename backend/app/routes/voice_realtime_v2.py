@@ -351,8 +351,28 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
     
     # Start Ollama process
     try:
+        # Determine Ollama command (full path for Windows)
+        import platform
+        import shutil
+        
+        ollama_cmd = "ollama"
+        if platform.system() == "Windows":
+            # Check common paths
+            possible_paths = [
+                r"C:\Users\asus\AppData\Local\Programs\Ollama\ollama.exe",
+                shutil.which("ollama.exe"),
+                shutil.which("ollama")
+            ]
+            for path in possible_paths:
+                if path and os.path.exists(path):
+                    ollama_cmd = path
+                    break
+                    
+        logger.info(f"Using Ollama command: {ollama_cmd}")
+        print(f"DEBUG: Using Ollama command: {ollama_cmd}")
+
         proc = await asyncio.create_subprocess_exec(
-            "ollama",
+            ollama_cmd,
             "run",
             OLLAMA_MODEL,
             stdin=asyncio.subprocess.PIPE,
@@ -362,17 +382,24 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
         
         # Send prompt to stdin
         if proc.stdin:
-            proc.stdin.write(full_prompt.encode('utf-8'))
-            await proc.stdin.drain()
-            proc.stdin.close()
+            try:
+                proc.stdin.write(full_prompt.encode('utf-8'))
+                await proc.stdin.drain()
+                proc.stdin.close()
+            except Exception as write_err:
+                # Process likely died
+                stderr_output = await proc.stderr.read()
+                error_msg = stderr_output.decode().strip() or str(write_err)
+                logger.error(f"Ollama process died: {error_msg}")
+                raise Exception(f"Ollama process died: {error_msg}")
         
         return proc.stdout
-    except FileNotFoundError:
-        logger.error("Ollama not found. Please install: https://ollama.ai")
-        return None
     except Exception as e:
-        logger.error(f"Ollama error: {e}")
-        return None
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Ollama error details: {error_trace}")
+        logger.error(f"Ollama error repr: {repr(e)}")
+        raise Exception(f"Failed to start AI: {type(e).__name__} - {str(e)}")
 
 
 async def synthesize_speech_piper(text: str) -> Optional[bytes]:
@@ -395,9 +422,17 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
     try:
         # Get piper executable path (try venv first, then system)
         import sys
-        piper_cmd = str(Path(sys.executable).parent / "piper")
+        import platform
+        
+        is_windows = platform.system() == "Windows"
+        piper_name = "piper.exe" if is_windows else "piper"
+        
+        piper_cmd = str(Path(sys.executable).parent / piper_name)
         if not Path(piper_cmd).exists():
-            piper_cmd = "piper"  # Fallback to system PATH
+            # Try without extension just in case (or for non-Windows)
+            piper_cmd = str(Path(sys.executable).parent / "piper")
+            if not Path(piper_cmd).exists():
+                piper_cmd = "piper"  # Fallback to system PATH
 
         # Resolve model or data-dir arguments for Piper
         model_info = resolve_piper_model_setting()
@@ -534,6 +569,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     # Session state
     session_id = str(uuid.uuid4())
     logger.info(f"Voice session started: {session_id}")
+    print(f"DEBUG: Voice session started: {session_id}")
     
     # Initialize services
     supabase = get_supabase_client()
@@ -611,6 +647,16 @@ async def voice_stream_endpoint(websocket: WebSocket):
         if not text.strip():
             return
         
+        if not text.strip():
+            return
+        
+        # User interrupted or new message -> Stop any pending TTS
+        while not tts_queue.empty():
+            try:
+                tts_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        
         logger.info(f"Processing user message: '{text}'")
         
         # Add to conversation
@@ -678,11 +724,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
             context_prompt += "\n\n⭐ ALL REQUIRED FIELDS COLLECTED! Tell the user you're processing their eligibility now. Do NOT ask for more information."
         
         # Get AI response from Ollama
-        stream = await run_ollama_stream(context_prompt, conversation_history)
-        if not stream:
+        try:
+            stream = await run_ollama_stream(context_prompt, conversation_history)
+        except Exception as e:
             await websocket.send_json({
                 "type": "error",
-                "data": "AI unavailable. Please ensure Ollama is running."
+                "data": f"AI Error: {str(e)}"
             })
             return
         
@@ -805,9 +852,14 @@ async def voice_stream_endpoint(websocket: WebSocket):
         while True:
             message = await websocket.receive()
             
+            if message["type"] == "websocket.disconnect":
+                logger.info(f"Client disconnected: {session_id}")
+                break
+            
             # Handle binary audio frames
             if "bytes" in message:
                 audio_chunk = message["bytes"]
+                # print(f"DEBUG: Received audio chunk: {len(audio_chunk)} bytes") # Too noisy
                 
                 if recognizer:
                     # Feed to Vosk
@@ -817,6 +869,8 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         text = result.get("text", "").strip()
                         
                         logger.info(f"Vosk final transcript: '{text}'")
+                        if text:
+                            print(f"DEBUG: Vosk final transcript: '{text}'")
                         
                         if text:
                             # Send final transcript

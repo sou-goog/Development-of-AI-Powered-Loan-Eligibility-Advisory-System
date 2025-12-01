@@ -14,6 +14,12 @@ from contextlib import asynccontextmanager
 # Load environment variables from backend/.env explicitly
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
+# Fix for Windows asyncio loop (NotImplementedError in subprocesses)
+import sys
+import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 # Auto-detect local voice models (non-invasive):
 # - If PIPER_MODEL not set, and backend/piper_voices/*.onnx exists, set PIPER_MODEL to the first ONNX path.
 # - If VOSK_MODEL_PATH not set, prefer ./models/vosk-model-small-en-us-0.15 when present.
@@ -107,7 +113,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(voice_routes.router, prefix="/api/voice", tags=["Voice"])
-app.include_router(voice_realtime.router)
+# app.include_router(voice_realtime.router)
 app.include_router(voice_realtime_v2.router, prefix="/api", tags=["Voice Agent - Real-time Streaming"])
 app.include_router(voice_health.router, prefix="/api/voice", tags=["Voice Health"])
 app.include_router(ocr_routes.router, prefix="/api/verify", tags=["Document Verification"])
@@ -188,4 +194,5 @@ async def db_health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # reload=False to prevent Windows event loop issues with subprocesses
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
