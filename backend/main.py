@@ -14,12 +14,15 @@ from contextlib import asynccontextmanager
 # Load environment variables from backend/.env explicitly
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
+<<<<<<< HEAD
 # Fix for Windows asyncio loop (NotImplementedError in subprocesses)
 import sys
 import asyncio
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+=======
+>>>>>>> origin/main
 # Auto-detect local voice models (non-invasive):
 # - If PIPER_MODEL not set, and backend/piper_voices/*.onnx exists, set PIPER_MODEL to the first ONNX path.
 # - If VOSK_MODEL_PATH not set, prefer ./models/vosk-model-small-en-us-0.15 when present.
@@ -47,6 +50,7 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables are created (works for SQLite and Postgres/Supabase)
     try:
         Base.metadata.create_all(bind=engine)
+<<<<<<< HEAD
         
         # Auto-create default users if they don't exist
         from app.models.database import SessionLocal, User
@@ -80,6 +84,8 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
+=======
+>>>>>>> origin/main
     except Exception as e:
         # Avoid crashing the app; surface error in logs
         import logging
@@ -113,7 +119,11 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(voice_routes.router, prefix="/api/voice", tags=["Voice"])
+<<<<<<< HEAD
 # app.include_router(voice_realtime.router)
+=======
+app.include_router(voice_realtime.router)
+>>>>>>> origin/main
 app.include_router(voice_realtime_v2.router, prefix="/api", tags=["Voice Agent - Real-time Streaming"])
 app.include_router(voice_health.router, prefix="/api/voice", tags=["Voice Health"])
 app.include_router(ocr_routes.router, prefix="/api/verify", tags=["Document Verification"])
@@ -194,5 +204,9 @@ async def db_health():
 
 if __name__ == "__main__":
     import uvicorn
+<<<<<<< HEAD
     # reload=False to prevent Windows event loop issues with subprocesses
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+=======
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+>>>>>>> origin/main

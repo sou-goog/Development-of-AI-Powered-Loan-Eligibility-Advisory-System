@@ -43,7 +43,6 @@ function App() {
 
         {/* Applicant Pages */}
         <Route path="/apply" element={<ApplyPage />} />
-
         {/* Wrong URL → Redirect to login */}
         <Route path="*" element={<Navigate to="/login" />} />
       </Routes>

@@ -22,6 +22,7 @@ Author: AI Development Assistant
 Date: November 2025
 """
 
+<<<<<<< HEAD
 import asyncio
 import json
 import logging
@@ -57,6 +58,22 @@ try:
 except Exception as e:
     logger.error(f"Failed to load Whisper model: {e}")
     whisper_model = None
+=======
+import os
+import re
+import json
+import uuid
+import base64
+import asyncio
+import tempfile
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, Optional, List
+from collections import deque
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import logging
+>>>>>>> origin/main
 
 # Try to import dependencies (graceful degradation if not installed)
 try:
@@ -372,6 +389,7 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
     
     # Start Ollama process
     try:
+<<<<<<< HEAD
         # Determine Ollama command (full path for Windows)
         import platform
         import shutil
@@ -394,6 +412,10 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
 
         proc = await asyncio.create_subprocess_exec(
             ollama_cmd,
+=======
+        proc = await asyncio.create_subprocess_exec(
+            "ollama",
+>>>>>>> origin/main
             "run",
             OLLAMA_MODEL,
             stdin=asyncio.subprocess.PIPE,
@@ -403,6 +425,7 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
         
         # Send prompt to stdin
         if proc.stdin:
+<<<<<<< HEAD
             try:
                 proc.stdin.write(full_prompt.encode('utf-8'))
                 await proc.stdin.drain()
@@ -421,6 +444,19 @@ async def run_ollama_stream(prompt: str, conversation_history: List[Dict]) -> as
         logger.error(f"Ollama error details: {error_trace}")
         logger.error(f"Ollama error repr: {repr(e)}")
         raise Exception(f"Failed to start AI: {type(e).__name__} - {str(e)}")
+=======
+            proc.stdin.write(full_prompt.encode('utf-8'))
+            await proc.stdin.drain()
+            proc.stdin.close()
+        
+        return proc.stdout
+    except FileNotFoundError:
+        logger.error("Ollama not found. Please install: https://ollama.ai")
+        return None
+    except Exception as e:
+        logger.error(f"Ollama error: {e}")
+        return None
+>>>>>>> origin/main
 
 
 async def synthesize_speech_piper(text: str) -> Optional[bytes]:
@@ -443,6 +479,7 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
     try:
         # Get piper executable path (try venv first, then system)
         import sys
+<<<<<<< HEAD
         import platform
         
         is_windows = platform.system() == "Windows"
@@ -454,6 +491,11 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
             piper_cmd = str(Path(sys.executable).parent / "piper")
             if not Path(piper_cmd).exists():
                 piper_cmd = "piper"  # Fallback to system PATH
+=======
+        piper_cmd = str(Path(sys.executable).parent / "piper")
+        if not Path(piper_cmd).exists():
+            piper_cmd = "piper"  # Fallback to system PATH
+>>>>>>> origin/main
 
         # Resolve model or data-dir arguments for Piper
         model_info = resolve_piper_model_setting()
@@ -590,18 +632,44 @@ async def voice_stream_endpoint(websocket: WebSocket):
     # Session state
     session_id = str(uuid.uuid4())
     logger.info(f"Voice session started: {session_id}")
+<<<<<<< HEAD
     print(f"DEBUG: Voice session started: {session_id}")
+=======
+>>>>>>> origin/main
     
     # Initialize services
     supabase = get_supabase_client()
     ml_service = get_ml_service()
     
+<<<<<<< HEAD
     # Initialize services
     supabase = get_supabase_client()
     ml_service = get_ml_service()
     
     # Vosk removed in favor of Web Speech API (Client-side STT)
     logger.info("Using Client-side Web Speech API for STT")
+=======
+    # Initialize Vosk recognizer
+    recognizer = None
+    if VOSK_AVAILABLE and Path(VOSK_MODEL_PATH).exists():
+        try:
+            vosk_model = Model(VOSK_MODEL_PATH)
+            recognizer = KaldiRecognizer(vosk_model, 16000)
+            recognizer.SetWords(True)
+            logger.info("Vosk recognizer initialized")
+        except Exception as e:
+            logger.error(f"Vosk initialization failed: {e}")
+            await websocket.send_json({
+                "type": "error",
+                "data": "Speech recognition unavailable. Please check Vosk model."
+            })
+    else:
+        logger.error(f"Vosk model not found at: {VOSK_MODEL_PATH}")
+        await websocket.send_json({
+            "type": "error",
+            "data": f"Vosk model not found. Download from: https://alphacephei.com/vosk/models"
+        })
+>>>>>>> origin/main
     
     # Conversation state
     conversation_history: List[Dict] = []
@@ -654,6 +722,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
         if not text.strip():
             return
         
+<<<<<<< HEAD
         if not text.strip():
             return
         
@@ -664,6 +733,8 @@ async def voice_stream_endpoint(websocket: WebSocket):
             except asyncio.QueueEmpty:
                 break
         
+=======
+>>>>>>> origin/main
         logger.info(f"Processing user message: '{text}'")
         
         # Add to conversation
@@ -731,12 +802,20 @@ async def voice_stream_endpoint(websocket: WebSocket):
             context_prompt += "\n\n⭐ ALL REQUIRED FIELDS COLLECTED! Tell the user you're processing their eligibility now. Do NOT ask for more information."
         
         # Get AI response from Ollama
+<<<<<<< HEAD
         try:
             stream = await run_ollama_stream(context_prompt, conversation_history)
         except Exception as e:
             await websocket.send_json({
                 "type": "error",
                 "data": f"AI Error: {str(e)}"
+=======
+        stream = await run_ollama_stream(context_prompt, conversation_history)
+        if not stream:
+            await websocket.send_json({
+                "type": "error",
+                "data": "AI unavailable. Please ensure Ollama is running."
+>>>>>>> origin/main
             })
             return
         
@@ -859,12 +938,57 @@ async def voice_stream_endpoint(websocket: WebSocket):
         while True:
             message = await websocket.receive()
             
+<<<<<<< HEAD
             if message["type"] == "websocket.disconnect":
                 logger.info(f"Client disconnected: {session_id}")
                 break
             
             # Handle text control messages
             if "text" in message:
+=======
+            # Handle binary audio frames
+            if "bytes" in message:
+                audio_chunk = message["bytes"]
+                
+                if recognizer:
+                    # Feed to Vosk
+                    if recognizer.AcceptWaveform(audio_chunk):
+                        # Final result
+                        result = json.loads(recognizer.Result())
+                        text = result.get("text", "").strip()
+                        
+                        logger.info(f"Vosk final transcript: '{text}'")
+                        
+                        if text:
+                            # Send final transcript
+                            await websocket.send_json({
+                                "type": "final_transcript",
+                                "data": text
+                            })
+                            
+                            # Process the message (with error handling to keep connection alive)
+                            try:
+                                await process_user_message(text)
+                            except Exception as e:
+                                logger.error(f"Error processing message, but keeping connection: {e}", exc_info=True)
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "data": f"Processing error: {str(e)}"
+                                })
+                    else:
+                        # Partial result
+                        partial = json.loads(recognizer.PartialResult())
+                        partial_text = partial.get("partial", "").strip()
+                        
+                        if partial_text:
+                            await websocket.send_json({
+                                "type": "partial_transcript",
+                                "data": partial_text
+                            })
+            
+            # Handle text control messages
+            elif "text" in message:
+>>>>>>> origin/main
                 try:
                     msg = json.loads(message["text"])
                     msg_type = msg.get("type")
@@ -876,6 +1000,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         logger.info(f"Session ended by client: {session_id}")
                         break
                     
+<<<<<<< HEAD
                     elif msg_type == "text_input":
                         # Received finalized text from frontend (Web Speech API)
                         text = msg.get("data", "").strip()
@@ -886,6 +1011,11 @@ async def voice_stream_endpoint(websocket: WebSocket):
                     elif msg_type == "manual_transcript":
                         # Allow manual text input for testing
                         text = msg.get("data", "").strip()
+=======
+                    elif msg_type == "manual_transcript":
+                        # Allow manual text input for testing
+                        text = msg.get("data", "")
+>>>>>>> origin/main
                         if text:
                             await process_user_message(text)
                 

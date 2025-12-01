@@ -11,7 +11,7 @@
  * - Displays loan eligibility results
  * 
  * Tech Stack:
- * - MediaRecorder API for audio capture
+ * - MediaRecorder API for audio capture (sending PCM16LE)
  * - WebSocket for bi-directional streaming
  * - Web Audio API for playing TTS audio chunks
  * - React hooks for state management
@@ -42,6 +42,13 @@ const VoiceAgentRealtime = () => {
   const [eligibilityResult, setEligibilityResult] = useState(null);
   const [showDocumentUpload, setShowDocumentUpload] = useState(false);
   const [applicationId, setApplicationId] = useState(null);
+
+  // Volume state for visualizer
+  const [volume, setVolume] = useState(0);
+
+  // Event Log for debugging
+  const [eventLog, setEventLog] = useState([]);
+  const addLog = (msg) => setEventLog(prev => [`${new Date().toLocaleTimeString().split(' ')[0]} ${msg}`, ...prev].slice(0, 3));
 
   // Refs for persistent connections
   const wsRef = useRef(null);
@@ -203,7 +210,7 @@ const VoiceAgentRealtime = () => {
       default:
         console.warn('Unknown message type:', type);
     }
-  }, [queueAudioChunk]);
+  }, [queueAudioChunk, stopAudioPlayback]);
 
   /**
    * Initialize WebSocket connection to backend
@@ -255,149 +262,100 @@ const VoiceAgentRealtime = () => {
   /**
    * Start recording microphone audio using AudioContext for PCM16LE
    */
-  // Volume state for visualizer
-  const [volume, setVolume] = useState(0);
-  const lastSpeechTimeRef = useRef(Date.now());
-  const watchdogTimerRef = useRef(null);
-
-  // Event Log for debugging
-  const [eventLog, setEventLog] = useState([]);
-  const addLog = (msg) => setEventLog(prev => [`${new Date().toLocaleTimeString().split(' ')[0]} ${msg}`, ...prev].slice(0, 3));
-
-  /**
-   * Start speech recognition using Web Speech API with VAD Watchdog
-   */
-  const startRecording = useCallback(async () => {
-    if (!('webkitSpeechRecognition' in window)) {
-      setError('Speech recognition not supported. Please use Chrome/Edge.');
-      return;
-    }
-
+  const startRecording = async () => {
     try {
-      // 1. Start AudioContext for Volume Visualization (VAD)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      });
+
+      // Create AudioContext for raw PCM audio processing
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const source = audioContext.createMediaStreamSource(stream);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      // Create ScriptProcessor for real-time audio processing
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-      // Animation & Watchdog Loop
-      const updateVolume = () => {
-        if (!isRecordingRef.current) return;
+      processor.onaudioprocess = (e) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          // Get float32 audio data
+          const inputData = e.inputBuffer.getChannelData(0);
 
-        analyser.getByteFrequencyData(dataArray);
-        const currentVolume = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setVolume(currentVolume);
-
-        requestAnimationFrame(updateVolume);
-      };
-
-      // 2. Start Web Speech API
-      const recognition = new window.webkitSpeechRecognition();
-      recognition.continuous = false; // Restart manually for stability
-      recognition.interimResults = true; // Keep interim for responsiveness
-      recognition.lang = 'en-US';
-
-      recognition.onstart = () => {
-        addLog('🎤 API Started');
-        setIsRecording(true);
-        isRecordingRef.current = true;
-        setError(null);
-      };
-
-      recognition.onresult = (event) => {
-        lastSpeechTimeRef.current = Date.now(); // Update activity timestamp
-
-        let finalTranscript = '';
-        let interimTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
+          // Calculate volume for visualizer
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
           }
-        }
+          const rms = Math.sqrt(sum / inputData.length);
+          setVolume(Math.min(100, rms * 400)); // Scale up for visibility
 
-        if (finalTranscript) {
-          addLog(`✅ Final: ${finalTranscript.substring(0, 10)}...`);
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-              type: 'text_input',
-              data: finalTranscript
-            }));
+          // Convert float32 (-1 to 1) to int16 PCM
+          const int16Data = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            // Clamp and convert to 16-bit integer
+            const s = Math.max(-1, Math.min(1, inputData[i]));
+            int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
-          setFinalTranscripts(prev => [...prev, { role: 'user', text: finalTranscript }]);
-          setPartialTranscript('');
-        }
 
-        if (interimTranscript) {
-          setPartialTranscript(interimTranscript);
+          // Send raw PCM16LE audio to backend
+          wsRef.current.send(int16Data.buffer);
         }
       };
 
-      recognition.onerror = (event) => {
-        addLog(`❌ Error: ${event.error}`);
-        if (event.error === 'not-allowed') {
-          setError('Microphone blocked.');
-          setIsRecording(false);
-          isRecordingRef.current = false;
-        }
-        // Ignore 'no-speech' as we auto-restart
-      };
+      // Connect audio pipeline
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
-      recognition.onend = () => {
-        addLog('🛑 API Ended');
-        // Only restart if we are in "Auto" mode (not PTT)
-        if (isRecordingRef.current) {
-          addLog('🔄 Restarting...');
-          try {
-            recognition.start();
-          } catch (e) {
-            console.error('Restart failed:', e);
-          }
-        }
-      };
-
-      recognition.start();
-
-      // Store refs
-      mediaRecorderRef.current = {
-        stream,
-        audioContext,
-        recognition,
-        stop: () => {
-          stream.getTracks().forEach(t => t.stop());
-          audioContext.close();
-          recognition.stop();
-        }
-      };
-
+      // Store references for cleanup
+      mediaRecorderRef.current = { stream, audioContext, processor, source };
       setIsRecording(true);
       isRecordingRef.current = true;
-      updateVolume();
+      setError(null);
+      addLog('🎤 Recording Started');
 
     } catch (err) {
-      console.error('Init failed:', err);
-      setError('Could not start audio. Check permissions.');
+      console.error('Failed to start recording:', err);
+      setError('Microphone access denied. Please allow microphone access.');
     }
-  }, []);
+  };
 
   /**
-   * Stop recording
+   * Stop recording microphone audio
    */
   const stopRecording = useCallback(() => {
-    isRecordingRef.current = false;
     if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
+      const { stream, audioContext, processor, source } = mediaRecorderRef.current;
+
+      // Disconnect audio pipeline
+      if (source && processor) {
+        try {
+          source.disconnect();
+          processor.disconnect();
+        } catch (e) {
+          // Already disconnected
+        }
+      }
+
+      // Close audio context
+      if (audioContext) {
+        audioContext.close();
+      }
+
+      // Stop all tracks
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
       mediaRecorderRef.current = null;
     }
     setIsRecording(false);
+    isRecordingRef.current = false;
     setVolume(0);
-    addLog('⏹️ Manually Stopped');
+    addLog('⏹️ Recording Stopped');
   }, []);
 
   /**
@@ -713,48 +671,9 @@ const VoiceAgentRealtime = () => {
             <div ref={messagesEndRef} />
           </div>
         </div>
-
-        {/* Control Buttons */}
-        <div className="flex items-center justify-center gap-4 my-6">
-          {/* Call Button */}
-          <button
-            onClick={handleCallToggle}
-            disabled={!isConnected}
-            className={`p-6 rounded-full shadow-lg transition-all transform hover:scale-110 ${isRecording
-              ? 'bg-red-500 hover:bg-red-600'
-              : 'bg-green-500 hover:bg-green-600'
-              } ${!isConnected ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {isRecording ? (
-              <PhoneOff className="w-8 h-8 text-white" />
-            ) : (
-              <Phone className="w-8 h-8 text-white" />
-            )}
-          </button>
-
-          {/* Mute Button */}
-          <button
-            onClick={toggleMute}
-            disabled={!isRecording}
-            className={`p-4 rounded-full shadow-md transition-all ${isMuted ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'
-              } ${!isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {isMuted ? (
-              <VolumeX className="w-6 h-6 text-white" />
-            ) : (
-              <Volume2 className="w-6 h-6 text-white" />
-            )}
-          </button>
-        </div>
-
-        {/* Help Text */}
-        <div className="mt-6 text-center text-sm text-gray-600">
-          <p>Click the green phone button to start talking with the AI assistant</p>
-          <p className="mt-1">The agent will help assess your loan eligibility</p>
-        </div>
       </div>
     </div>
   );
-}; // Closes the component function
+};
 
 export default VoiceAgentRealtime;
