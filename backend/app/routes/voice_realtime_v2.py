@@ -22,20 +22,41 @@ Author: AI Development Assistant
 Date: November 2025
 """
 
-import os
-import re
-import json
-import uuid
-import base64
 import asyncio
-import tempfile
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, Optional, List
-from collections import deque
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import json
 import logging
+import os
+import uuid
+import traceback
+import base64
+import numpy as np
+import io
+from typing import List, Dict, Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from app.services.supabase_client import get_supabase_client
+from app.services.ml_model_service import get_ml_service
+from app.utils.text_processing import extract_loan_info
+from dotenv import load_dotenv
+from faster_whisper import WhisperModel
+
+# Load env vars
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# Initialize Whisper Model (Global)
+# "tiny" is very fast and lightweight (~75MB VRAM/RAM). "int8" makes it even smaller.
+logger.info("Loading Whisper 'tiny' model...")
+try:
+    whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+    logger.info("Whisper 'tiny' model loaded successfully!")
+except Exception as e:
+    logger.error(f"Failed to load Whisper model: {e}")
+    whisper_model = None
 
 # Try to import dependencies (graceful degradation if not installed)
 try:
@@ -575,26 +596,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
     supabase = get_supabase_client()
     ml_service = get_ml_service()
     
-    # Initialize Vosk recognizer
-    recognizer = None
-    if VOSK_AVAILABLE and Path(VOSK_MODEL_PATH).exists():
-        try:
-            vosk_model = Model(VOSK_MODEL_PATH)
-            recognizer = KaldiRecognizer(vosk_model, 16000)
-            recognizer.SetWords(True)
-            logger.info("Vosk recognizer initialized")
-        except Exception as e:
-            logger.error(f"Vosk initialization failed: {e}")
-            await websocket.send_json({
-                "type": "error",
-                "data": "Speech recognition unavailable. Please check Vosk model."
-            })
-    else:
-        logger.error(f"Vosk model not found at: {VOSK_MODEL_PATH}")
-        await websocket.send_json({
-            "type": "error",
-            "data": f"Vosk model not found. Download from: https://alphacephei.com/vosk/models"
-        })
+    # Initialize services
+    supabase = get_supabase_client()
+    ml_service = get_ml_service()
+    
+    # Vosk removed in favor of Web Speech API (Client-side STT)
+    logger.info("Using Client-side Web Speech API for STT")
     
     # Conversation state
     conversation_history: List[Dict] = []
@@ -856,51 +863,8 @@ async def voice_stream_endpoint(websocket: WebSocket):
                 logger.info(f"Client disconnected: {session_id}")
                 break
             
-            # Handle binary audio frames
-            if "bytes" in message:
-                audio_chunk = message["bytes"]
-                # print(f"DEBUG: Received audio chunk: {len(audio_chunk)} bytes") # Too noisy
-                
-                if recognizer:
-                    # Feed to Vosk
-                    if recognizer.AcceptWaveform(audio_chunk):
-                        # Final result
-                        result = json.loads(recognizer.Result())
-                        text = result.get("text", "").strip()
-                        
-                        logger.info(f"Vosk final transcript: '{text}'")
-                        if text:
-                            print(f"DEBUG: Vosk final transcript: '{text}'")
-                        
-                        if text:
-                            # Send final transcript
-                            await websocket.send_json({
-                                "type": "final_transcript",
-                                "data": text
-                            })
-                            
-                            # Process the message (with error handling to keep connection alive)
-                            try:
-                                await process_user_message(text)
-                            except Exception as e:
-                                logger.error(f"Error processing message, but keeping connection: {e}", exc_info=True)
-                                await websocket.send_json({
-                                    "type": "error",
-                                    "data": f"Processing error: {str(e)}"
-                                })
-                    else:
-                        # Partial result
-                        partial = json.loads(recognizer.PartialResult())
-                        partial_text = partial.get("partial", "").strip()
-                        
-                        if partial_text:
-                            await websocket.send_json({
-                                "type": "partial_transcript",
-                                "data": partial_text
-                            })
-            
             # Handle text control messages
-            elif "text" in message:
+            if "text" in message:
                 try:
                     msg = json.loads(message["text"])
                     msg_type = msg.get("type")
@@ -912,9 +876,16 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         logger.info(f"Session ended by client: {session_id}")
                         break
                     
+                    elif msg_type == "text_input":
+                        # Received finalized text from frontend (Web Speech API)
+                        text = msg.get("data", "").strip()
+                        if text:
+                            logger.info(f"Received text input: '{text}'")
+                            await process_user_message(text)
+                    
                     elif msg_type == "manual_transcript":
                         # Allow manual text input for testing
-                        text = msg.get("data", "")
+                        text = msg.get("data", "").strip()
                         if text:
                             await process_user_message(text)
                 

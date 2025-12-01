@@ -49,6 +49,7 @@ const VoiceAgentRealtime = () => {
   const audioContextRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
+  const isRecordingRef = useRef(false); // Ref for event handlers
   const currentSourceRef = useRef(null); // Track current audio source
   const currentAiTokenRef = useRef('');
   const messagesEndRef = useRef(null);
@@ -254,88 +255,150 @@ const VoiceAgentRealtime = () => {
   /**
    * Start recording microphone audio using AudioContext for PCM16LE
    */
-  const startRecording = async () => {
+  // Volume state for visualizer
+  const [volume, setVolume] = useState(0);
+  const lastSpeechTimeRef = useRef(Date.now());
+  const watchdogTimerRef = useRef(null);
+
+  // Event Log for debugging
+  const [eventLog, setEventLog] = useState([]);
+  const addLog = (msg) => setEventLog(prev => [`${new Date().toLocaleTimeString().split(' ')[0]} ${msg}`, ...prev].slice(0, 3));
+
+  /**
+   * Start speech recognition using Web Speech API with VAD Watchdog
+   */
+  const startRecording = useCallback(async () => {
+    if (!('webkitSpeechRecognition' in window)) {
+      setError('Speech recognition not supported. Please use Chrome/Edge.');
+      return;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-        }
-      });
-
-      // Create AudioContext for raw PCM audio processing
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      // 1. Start AudioContext for Volume Visualization (VAD)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
 
-      // Create ScriptProcessor for real-time audio processing
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      processor.onaudioprocess = (e) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          // Get float32 audio data
-          const inputData = e.inputBuffer.getChannelData(0);
+      // Animation & Watchdog Loop
+      const updateVolume = () => {
+        if (!isRecordingRef.current) return;
 
-          // Convert float32 (-1 to 1) to int16 PCM
-          const int16Data = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            // Clamp and convert to 16-bit integer
-            const s = Math.max(-1, Math.min(1, inputData[i]));
-            int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        analyser.getByteFrequencyData(dataArray);
+        const currentVolume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setVolume(currentVolume);
+
+        requestAnimationFrame(updateVolume);
+      };
+
+      // 2. Start Web Speech API
+      const recognition = new window.webkitSpeechRecognition();
+      recognition.continuous = false; // Restart manually for stability
+      recognition.interimResults = true; // Keep interim for responsiveness
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        addLog('🎤 API Started');
+        setIsRecording(true);
+        isRecordingRef.current = true;
+        setError(null);
+      };
+
+      recognition.onresult = (event) => {
+        lastSpeechTimeRef.current = Date.now(); // Update activity timestamp
+
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
           }
+        }
 
-          // Send raw PCM16LE audio to backend
-          wsRef.current.send(int16Data.buffer);
+        if (finalTranscript) {
+          addLog(`✅ Final: ${finalTranscript.substring(0, 10)}...`);
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'text_input',
+              data: finalTranscript
+            }));
+          }
+          setFinalTranscripts(prev => [...prev, { role: 'user', text: finalTranscript }]);
+          setPartialTranscript('');
+        }
+
+        if (interimTranscript) {
+          setPartialTranscript(interimTranscript);
         }
       };
 
-      // Connect audio pipeline
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      recognition.onerror = (event) => {
+        addLog(`❌ Error: ${event.error}`);
+        if (event.error === 'not-allowed') {
+          setError('Microphone blocked.');
+          setIsRecording(false);
+          isRecordingRef.current = false;
+        }
+        // Ignore 'no-speech' as we auto-restart
+      };
 
-      // Store references for cleanup
-      mediaRecorderRef.current = { stream, audioContext, processor, source };
+      recognition.onend = () => {
+        addLog('🛑 API Ended');
+        // Only restart if we are in "Auto" mode (not PTT)
+        if (isRecordingRef.current) {
+          addLog('🔄 Restarting...');
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error('Restart failed:', e);
+          }
+        }
+      };
+
+      recognition.start();
+
+      // Store refs
+      mediaRecorderRef.current = {
+        stream,
+        audioContext,
+        recognition,
+        stop: () => {
+          stream.getTracks().forEach(t => t.stop());
+          audioContext.close();
+          recognition.stop();
+        }
+      };
+
       setIsRecording(true);
-      setError(null);
+      isRecordingRef.current = true;
+      updateVolume();
 
     } catch (err) {
-      console.error('Failed to start recording:', err);
-      setError('Microphone access denied. Please allow microphone access.');
+      console.error('Init failed:', err);
+      setError('Could not start audio. Check permissions.');
     }
-  };
+  }, []);
 
   /**
-   * Stop recording microphone audio
+   * Stop recording
    */
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
+    isRecordingRef.current = false;
     if (mediaRecorderRef.current) {
-      const { stream, audioContext, processor, source } = mediaRecorderRef.current;
-
-      // Disconnect audio pipeline
-      if (source && processor) {
-        try {
-          source.disconnect();
-          processor.disconnect();
-        } catch (e) {
-          // Already disconnected
-        }
-      }
-
-      // Close audio context
-      if (audioContext) {
-        audioContext.close();
-      }
-
-      // Stop all tracks
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-
+      mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
     }
     setIsRecording(false);
-  };
+    setVolume(0);
+    addLog('⏹️ Manually Stopped');
+  }, []);
 
   /**
    * Toggle mute/unmute
@@ -409,6 +472,95 @@ const VoiceAgentRealtime = () => {
           )}
         </div>
 
+        {/* Text Input Fallback */}
+        <div className="mb-6 flex gap-2">
+          <input
+            type="text"
+            placeholder="Type your message here if voice fails..."
+            className="flex-1 px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.target.value.trim()) {
+                const text = e.target.value.trim();
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({
+                    type: 'text_input',
+                    data: text
+                  }));
+                  setFinalTranscripts(prev => [...prev, { role: 'user', text: text }]);
+                  e.target.value = '';
+                } else {
+                  toast.error("Not connected");
+                }
+              }
+            }}
+          />
+        </div>
+
+        {/* Controls */}
+        <div className="flex flex-col items-center justify-center gap-4">
+
+          {/* Volume Visualizer */}
+          {isRecording && (
+            <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 transition-all duration-75"
+                style={{ width: `${Math.min(100, volume * 2)}%` }}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-6">
+            <button
+              onClick={toggleMute}
+              className={`p-4 rounded-full transition-all duration-200 ${isMuted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              title={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+            </button>
+
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`p-6 rounded-full transition-all duration-200 shadow-lg ${isRecording
+                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              title={isRecording ? "Stop Call" : "Start Call"}
+            >
+              {isRecording ? <PhoneOff size={32} /> : <Phone size={32} />}
+            </button>
+
+            {/* Debug / Test Button */}
+            <button
+              onClick={() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({
+                    type: 'text_input',
+                    data: "Hello, is this working?"
+                  }));
+                  setFinalTranscripts(prev => [...prev, { role: 'user', text: "Hello, is this working?" }]);
+                } else {
+                  toast.error("WebSocket not connected");
+                }
+              }}
+              className="absolute bottom-4 right-4 px-3 py-1 bg-gray-200 text-xs rounded opacity-50 hover:opacity-100"
+            >
+              Test Msg
+            </button>
+          </div>
+        </div>
+
+        {/* Debug Status Display */}
+        <div className="mt-4 p-2 bg-gray-100 rounded text-xs text-gray-600 font-mono">
+          <p>Status: {isRecording ? "🎤 Listening" : "🛑 Stopped"}</p>
+          <p>Volume: {Math.round(volume)}</p>
+          <div className="mt-2 border-t pt-1">
+            <p className="font-bold">Log:</p>
+            {eventLog.map((log, i) => (
+              <p key={i} className="truncate">{log}</p>
+            ))}
+          </div>
+        </div>
         {/* Error Display */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
