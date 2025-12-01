@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ai-loan-backend
+    runtime: python3
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && python main.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-loan-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false  # Set in Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: OLLAMA_API_URL
+        value: http://localhost:11434/api
+      - key: OLLAMA_MODEL
+        value: llama3
+
+databases:
+  - name: ai-loan-db
+    databaseName: ai_loan_system
+    user: ai_loan_user
+    plan: free
