@@ -21,7 +21,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Volume2, VolumeX } from 'lucide-react';
+import { Phone, PhoneOff, Volume2, VolumeX, X } from 'lucide-react';
 import FileUpload from './FileUpload';
 import { toast } from 'react-toastify';
 
@@ -402,276 +402,138 @@ const VoiceAgentRealtime = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-6 pb-6">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            🎙️ LoanVoice Agent
-          </h1>
-          <p className="text-gray-600">
-            Real-time AI voice assistant for loan eligibility
-          </p>
+    <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden relative">
+
+      {/* Header - Minimal */}
+      <div className="bg-white/80 backdrop-blur-sm shadow-sm p-4 z-10 flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">🎙️ LoanVoice</h1>
+          <p className="text-xs text-gray-500">AI Loan Assistant</p>
         </div>
-
-        {/* Connection Status */}
-        <div className="flex items-center justify-center gap-4 mb-6">
-          <div className={`px-4 py-2 rounded-full ${isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
-            <span className="font-medium">
-              {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-            </span>
-          </div>
-
-          {isRecording && (
-            <div className="px-4 py-2 bg-blue-100 text-blue-700 rounded-full animate-pulse">
-              <span className="font-medium">🎤 Listening...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Text Input Fallback */}
-        <div className="mb-6 flex gap-2">
-          <input
-            type="text"
-            placeholder="Type your message here if voice fails..."
-            className="flex-1 px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.target.value.trim()) {
-                const text = e.target.value.trim();
-                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({
-                    type: 'text_input',
-                    data: text
-                  }));
-                  setFinalTranscripts(prev => [...prev, { role: 'user', text: text }]);
-                  e.target.value = '';
-                } else {
-                  toast.error("Not connected");
-                }
-              }
-            }}
-          />
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-col items-center justify-center gap-4">
-
-          {/* Volume Visualizer */}
-          {isRecording && (
-            <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-500 transition-all duration-75"
-                style={{ width: `${Math.min(100, volume * 2)}%` }}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center justify-center gap-6">
-            <button
-              onClick={toggleMute}
-              className={`p-4 rounded-full transition-all duration-200 ${isMuted ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              title={isMuted ? "Unmute" : "Mute"}
-            >
-              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
-            </button>
-
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`p-6 rounded-full transition-all duration-200 shadow-lg ${isRecording
-                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              title={isRecording ? "Stop Call" : "Start Call"}
-            >
-              {isRecording ? <PhoneOff size={32} /> : <Phone size={32} />}
-            </button>
-
-            {/* Debug / Test Button */}
-            <button
-              onClick={() => {
-                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({
-                    type: 'text_input',
-                    data: "Hello, is this working?"
-                  }));
-                  setFinalTranscripts(prev => [...prev, { role: 'user', text: "Hello, is this working?" }]);
-                } else {
-                  toast.error("WebSocket not connected");
-                }
-              }}
-              className="absolute bottom-4 right-4 px-3 py-1 bg-gray-200 text-xs rounded opacity-50 hover:opacity-100"
-            >
-              Test Msg
-            </button>
-          </div>
-        </div>
-
-        {/* Debug Status Display */}
-        <div className="mt-4 p-2 bg-gray-100 rounded text-xs text-gray-600 font-mono">
-          <p>Status: {isRecording ? "🎤 Listening" : "🛑 Stopped"}</p>
-          <p>Volume: {Math.round(volume)}</p>
-          <div className="mt-2 border-t pt-1">
-            <p className="font-bold">Log:</p>
-            {eventLog.map((log, i) => (
-              <p key={i} className="truncate">{log}</p>
-            ))}
-          </div>
-        </div>
-        {/* Error Display */}
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            <p className="font-medium">⚠️ {error}</p>
-          </div>
-        )}
-
-        {/* Extracted Data Display */}
-        {Object.keys(extractedData).length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-4 mb-4">
-            <h3 className="font-bold text-gray-700 mb-3">📋 Collected Information</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {extractedData.name && (
-                <div className="bg-blue-50 p-3 rounded">
-                  <span className="text-sm text-gray-600">Name</span>
-                  <p className="font-semibold">{extractedData.name}</p>
-                </div>
-              )}
-              {extractedData.monthly_income && (
-                <div className="bg-green-50 p-3 rounded">
-                  <span className="text-sm text-gray-600">Monthly Income</span>
-                  <p className="font-semibold">${extractedData.monthly_income.toLocaleString()}</p>
-                </div>
-              )}
-              {extractedData.credit_score && (
-                <div className="bg-purple-50 p-3 rounded">
-                  <span className="text-sm text-gray-600">Credit Score</span>
-                  <p className="font-semibold">{extractedData.credit_score}</p>
-                </div>
-              )}
-              {extractedData.loan_amount && (
-                <div className="bg-yellow-50 p-3 rounded">
-                  <span className="text-sm text-gray-600">Loan Amount</span>
-                  <p className="font-semibold">${extractedData.loan_amount.toLocaleString()}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Document Upload Section */}
-        {showDocumentUpload && !eligibilityResult && (
-          <div className="bg-white border-2 border-blue-400 rounded-lg shadow-lg p-6 mb-4">
-            <div className="text-center mb-4">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                📄 Document Verification Required
-              </h3>
-              <p className="text-gray-700 mb-4">
-                Thank you! I have collected all your details. Now please upload your identity document for verification before we process your loan eligibility.
-              </p>
-
-              {/* Display collected information */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-left">
-                <p className="text-sm font-medium text-blue-900 mb-2">
-                  📋 Your Application Details:
-                </p>
-                <div className="grid grid-cols-2 gap-3 text-xs text-blue-700">
-                  <div>
-                    <span className="font-semibold">Name:</span> {extractedData.name}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Monthly Income:</span> ${extractedData.monthly_income?.toLocaleString()}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Credit Score:</span> {extractedData.credit_score}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Loan Amount:</span> ${extractedData.loan_amount?.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Embedded File Upload Component */}
-            <FileUpload
-              onUploadSuccess={(data) => {
-                toast.success('Document uploaded successfully!');
-
-                // Generate application ID
-                const tempAppId = applicationId || Date.now();
-                setApplicationId(tempAppId);
-
-                // Send document verified message to backend
-                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({
-                    type: 'document_verified',
-                    application_id: tempAppId,
-                    extracted_data: data.extracted_data
-                  }));
-                }
-              }}
-              applicationId={applicationId || Date.now().toString()}
-              autoCheck={false}
-            />
-          </div>
-        )}
-
-        {/* Eligibility Result */}
-        {eligibilityResult && (
-          <div className={`rounded-lg shadow-lg p-6 mb-4 ${eligibilityResult.approved ? 'bg-green-100 border-2 border-green-500' : 'bg-red-100 border-2 border-red-500'
-            }`}>
-            <h3 className="text-2xl font-bold mb-2">
-              {eligibilityResult.approved ? '✅ Loan Approved!' : '❌ Loan Denied'}
-            </h3>
-            <p className="text-lg mb-2">
-              Approval Probability: <span className="font-bold">{(eligibilityResult.probability * 100).toFixed(1)}%</span>
-            </p>
-            <p className="text-sm text-gray-700">
-              Confidence: {(eligibilityResult.confidence * 100).toFixed(1)}%
-            </p>
-          </div>
-        )}
-
-        {/* Conversation Display */}
-        <div className="bg-white rounded-lg shadow-md p-4 mb-4 overflow-y-auto" style={{ minHeight: '300px', maxHeight: '500px' }}>
-          <div className="space-y-3">
-            {finalTranscripts.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-md px-4 py-2 rounded-lg break-words ${msg.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-800'
-                    }`}
-                >
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
-                </div>
-              </div>
-            ))}
-
-            {/* Current AI Response (typing effect) */}
-            {currentAiToken && (
-              <div className="flex justify-start">
-                <div className="max-w-md px-4 py-2 rounded-lg bg-gray-200 text-gray-800 break-words">
-                  <p className="animate-pulse whitespace-pre-wrap">{currentAiToken}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Partial Transcript (user still speaking) */}
-            {partialTranscript && (
-              <div className="flex justify-end">
-                <div className="max-w-md px-4 py-2 rounded-lg bg-blue-300 text-blue-900 opacity-70 break-words">
-                  <p className="italic whitespace-pre-wrap">{partialTranscript}...</p>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+        <div className={`px-3 py-1 rounded-full text-xs font-medium ${isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {isConnected ? 'Connected' : 'Disconnected'}
         </div>
       </div>
+
+      {/* Main Content Area - Conversation History */}
+      <div className="flex-1 overflow-y-auto p-4 pb-48 space-y-4 scroll-smooth">
+
+        {/* Welcome Message */}
+        {finalTranscripts.length === 0 && !partialTranscript && !currentAiToken && (
+          <div className="text-center text-gray-500 mt-10">
+            <p className="mb-2">👋 Hi! I'm your AI Loan Assistant.</p>
+          </div>
+        )}
+
+        {/* Chat Messages */}
+        {finalTranscripts.map((msg, idx) => (
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] px-4 py-2 rounded-2xl shadow-sm ${msg.role === 'user'
+              ? 'bg-blue-600 text-white rounded-br-none'
+              : 'bg-white text-gray-800 rounded-bl-none border border-gray-100'
+              }`}>
+              <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
+            </div>
+          </div>
+        ))}
+
+        {/* Typing Animation */}
+        {currentAiToken && (
+          <div className="flex justify-start">
+            <div className="max-w-[80%] px-4 py-2 rounded-2xl rounded-bl-none bg-white text-gray-800 border border-gray-100 shadow-sm">
+              <p className="whitespace-pre-wrap text-sm">{currentAiToken}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Partial Transcript */}
+        {partialTranscript && (
+          <div className="flex justify-end">
+            <div className="max-w-[80%] px-4 py-2 rounded-2xl rounded-br-none bg-blue-400/20 text-blue-900 italic border border-blue-200">
+              <p className="text-sm">{partialTranscript}...</p>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Bottom Controls Area (Fixed) */}
+      <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-6 z-20">
+        <div className="max-w-3xl mx-auto flex items-center gap-3">
+
+          {/* Text Input Bar */}
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder={isRecording ? "Listening..." : "Type a message..."}
+              className={`w-full pl-4 pr-10 py-3 rounded-full border-none focus:ring-2 transition-all shadow-sm text-base ${isRecording
+                ? 'bg-red-50 ring-2 ring-red-100 placeholder-red-400'
+                : 'bg-gray-100 focus:bg-white focus:ring-blue-500'
+                }`}
+              value={isRecording ? partialTranscript : undefined}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                  const text = e.target.value.trim();
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: 'text_input', data: text }));
+                    setFinalTranscripts(prev => [...prev, { role: 'user', text: text }]);
+                    e.target.value = '';
+                  } else {
+                    toast.error("Not connected");
+                  }
+                }
+              }}
+            />
+            {/* Send Icon (only visible when typing) */}
+            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
+
+          {/* Mic Button */}
+          <button
+            onClick={handleCallToggle}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-md flex-shrink-0 ${isRecording
+              ? 'bg-red-500 text-white shadow-red-500/40 scale-110 animate-pulse'
+              : isConnected
+                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            disabled={!isConnected}
+          >
+            {isRecording ? <PhoneOff size={20} /> : <Phone size={20} />}
+          </button>
+
+        </div>
+      </div>
+      {/* Document Upload Modal */}
+      {showDocumentUpload && (
+        <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md h-[80%] overflow-hidden flex flex-col border border-gray-200">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="font-semibold text-gray-800">Verify Identity</h3>
+              <button
+                onClick={() => setShowDocumentUpload(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 p-4 overflow-y-auto">
+              <FileUpload
+                applicationId={applicationId}
+                onUploadSuccess={(data) => {
+                  toast.success("Verification Complete!");
+                  setShowDocumentUpload(false);
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: 'document_uploaded', data: data }));
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
