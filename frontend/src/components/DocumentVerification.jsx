@@ -1,16 +1,10 @@
 import React, { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import { ocrAPI, loanAPI } from "../utils/api";
 import { toast } from "react-toastify";
-import {
-  Upload,
-  FileText,
-  CheckCircle,
-  X,
-  AlertCircle,
-  Loader,
-} from "lucide-react";
+import { Upload, CheckCircle, X, AlertCircle, Loader } from "lucide-react";
 
 const DOCUMENT_TYPES = [
   { id: "aadhaar", label: "Aadhaar Card", description: "National ID proof" },
@@ -35,6 +29,7 @@ export default function DocumentVerification({ applicationId, onVerified }) {
   const [extractedData, setExtractedData] = useState({});
   const [error, setError] = useState(null);
   const [checkingEligibility, setCheckingEligibility] = useState(false);
+  const navigate = useNavigate();
 
   const handleUpload = useCallback(
     async (file, docType) => {
@@ -156,16 +151,25 @@ export default function DocumentVerification({ applicationId, onVerified }) {
     satisfiesGroup(GROUP_IDENTITY) && satisfiesGroup(GROUP_FINANCIAL);
 
   const handlePredictEligibility = async () => {
-    if (!allDocumentsUploaded) {
-      toast.error("Please upload all required documents first.");
-      return;
+    if (!requiredGroupsSatisfied) {
+     toast.error("Please upload all required documents first.");
+     return;
     }
+
 
     setCheckingEligibility(true);
     try {
       const response = await loanAPI.predictForApplication(applicationId);
-      onVerified && onVerified(response.data);
       toast.success("Eligibility check completed!");
+      // Redirect to eligibility result page with result and applicationId
+      navigate("/eligibility-result", {
+        state: {
+          result: response.data,
+          applicationId,
+          applicationData: null, // You can pass more if available
+          extractedData,
+        },
+      });
     } catch (err) {
       setError(err.response?.data?.detail || "Failed to predict eligibility");
       toast.error(
@@ -177,18 +181,15 @@ export default function DocumentVerification({ applicationId, onVerified }) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-lg">
-        <h2 className="text-3xl font-bold mb-2">
-          📄 Document Verification & KYC
-        </h2>
-        <p className="text-blue-100">
-          Upload all 5 required documents. All uploads are mandatory to proceed
-          with eligibility check.
+    <div className="w-full h-full flex flex-col glass bg-white/70 dark:bg-gray-900/80 rounded-3xl shadow-2xl p-0 md:p-4">
+      <div className="bg-gradient-to-r from-blue-100/80 to-indigo-100/80 dark:from-gray-800 dark:to-gray-900 text-gray-900 dark:text-white p-6 rounded-t-3xl border-b border-white/30">
+        <h2 className="text-3xl font-bold mb-2">📄 Document Verification & KYC</h2>
+        <p className="text-gray-700 dark:text-blue-100">
+          Upload all 5 required documents. All uploads are mandatory to proceed with eligibility check.
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-white/60 dark:bg-gray-900/60 rounded-b-3xl">
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -219,7 +220,7 @@ export default function DocumentVerification({ applicationId, onVerified }) {
       </div>
 
       {/* Upload Status Summary & Action Button */}
-      <div className="border-t bg-white p-6">
+      <div className="border-t bg-white/80 dark:bg-gray-800/80 p-6 rounded-b-3xl">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -227,35 +228,25 @@ export default function DocumentVerification({ applicationId, onVerified }) {
         >
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h4 className="font-bold text-lg text-gray-900">
-                Upload Progress: {Object.keys(uploadedDocuments).length}/
-                {DOCUMENT_TYPES.length} Documents
+              <h4 className="font-bold text-lg text-gray-900 dark:text-white">
+                Upload Progress: {Object.keys(uploadedDocuments).length}/{DOCUMENT_TYPES.length} Documents
               </h4>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                 {requiredGroupsSatisfied
                   ? "✓ Required documents uploaded! Ready for eligibility check."
                   : `Please upload at least one ID (Aadhaar, PAN or KYC) and one financial proof (Bank statement or Salary slip).`}
               </p>
             </div>
-            <div className="text-4xl font-bold text-blue-600">
-              {Math.round(
-                (Object.keys(uploadedDocuments).length /
-                  DOCUMENT_TYPES.length) *
-                  100
-              )}
-              %
+            <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">
+              {Math.round((Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100)}%
             </div>
           </div>
-          <div className="w-full bg-gray-300 rounded-full h-3">
+          <div className="w-full bg-gray-300 dark:bg-gray-700 rounded-full h-3">
             <motion.div
               className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full"
               initial={{ width: 0 }}
               animate={{
-                width: `${
-                  (Object.keys(uploadedDocuments).length /
-                    DOCUMENT_TYPES.length) *
-                  100
-                }%`,
+                width: `${(Object.keys(uploadedDocuments).length / DOCUMENT_TYPES.length) * 100}%`,
               }}
               transition={{ duration: 0.5 }}
             />
@@ -283,6 +274,7 @@ export default function DocumentVerification({ applicationId, onVerified }) {
             "Proceed to Eligibility Check"
           )}
         </motion.button>
+        {/* Eligibility Result Display removed: now handled by redirect */}
       </div>
     </div>
   );
@@ -315,12 +307,12 @@ const DocumentUploadCard = ({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="border border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 transition-colors"
+      className="border border-gray-200 rounded-xl overflow-hidden hover:border-blue-400 transition-colors glass bg-white/80 dark:bg-gray-800/80 shadow-lg"
     >
       {/* Card Header */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-gray-200">
-        <h4 className="font-semibold text-gray-900">{docType.label}</h4>
-        <p className="text-xs text-gray-600">{docType.description}</p>
+      <div className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-gray-900/80 dark:to-gray-800/80 px-4 py-3 border-b border-gray-200">
+        <h4 className="font-semibold text-gray-900 dark:text-white">{docType.label}</h4>
+        <p className="text-xs text-gray-700 dark:text-gray-300">{docType.description}</p>
       </div>
 
       {/* Upload Area or Status */}
@@ -407,20 +399,20 @@ const DocumentUploadCard = ({
           <motion.div
             {...getRootProps()}
             whileHover={{ scale: 1.02 }}
-            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all bg-white/70 dark:bg-gray-900/70 ${
               isDragActive && !isDragReject
-                ? "border-blue-400 bg-blue-50"
+                ? "border-blue-400 bg-blue-50/80 dark:bg-blue-900/40"
                 : isDragReject
-                ? "border-red-400 bg-red-50"
+                ? "border-red-400 bg-red-50/80 dark:bg-red-900/40"
                 : "border-gray-300 hover:border-blue-400"
             }`}
           >
             <input {...getInputProps()} />
             <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-gray-700">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
               Drop or click to upload
             </p>
-            <p className="text-xs text-gray-500 mt-1">JPG, PNG, or PDF</p>
+            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">JPG, PNG, or PDF</p>
           </motion.div>
         )}
       </div>

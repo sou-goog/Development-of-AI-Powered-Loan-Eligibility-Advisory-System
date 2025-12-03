@@ -1,3 +1,6 @@
+// Redesigned App.js with cleaner structure, layout wrappers, animated transitions,
+// and ready for modern UI (sidebar + topbar). You can now plug redesigned pages/components.
+
 import React from "react";
 import {
   BrowserRouter as Router,
@@ -8,38 +11,39 @@ import {
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-// Components
-import Navbar from "./components/Navbar";
+import MainLayout from "./layout/MainLayout";
+
+
+// Pages
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
-import Chatbot from "./components/Chatbot";
 import ApplyPage from "./pages/ApplyPage";
 import Verification from "./pages/Verification";
 import Manager from "./pages/Manager";
+import EligibilityResultPage from "./pages/EligibilityResultPage";
+import Chatbot from "./components/Chatbot";
 
 // Utils
 import { auth } from "./utils/auth";
 
-function App() {
-  // Protected Route Component
-  const ProtectedRoute = ({ children, requireManager = false }) => {
-    const authed = auth.isAuthenticated();
-    const manager = auth.isManager();
-    if (!authed) {
-      return <Navigate to="/auth" replace />;
-    }
-    if (requireManager && !manager) {
-      return <Navigate to="/" replace />;
-    }
-    return children;
-  };
+// Protected Route Wrapper
+function ProtectedRoute({ children, requireManager = false }) {
+  const authed = auth.isAuthenticated();
+  const manager = auth.isManager();
 
+  if (!authed) return <Navigate to="/auth" replace />;
+  if (requireManager && !manager) return <Navigate to="/" replace />;
+
+  return children;
+}
+
+export default function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
+      <MainLayout>
         <Routes>
           <Route path="/" element={<Home />} />
+
           <Route
             path="/auth"
             element={
@@ -53,6 +57,7 @@ function App() {
               )
             }
           />
+
           <Route
             path="/apply"
             element={
@@ -61,16 +66,19 @@ function App() {
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/apply-chat"
             element={
               <ProtectedRoute>
-                <div className="container mx-auto px-4 py-8">
+                <div className="p-4">
                   <Chatbot />
                 </div>
               </ProtectedRoute>
             }
           />
+
+
           <Route
             path="/verify"
             element={
@@ -79,6 +87,16 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="/eligibility-result"
+            element={
+              <ProtectedRoute>
+                <EligibilityResultPage />
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/manager"
             element={
@@ -87,22 +105,12 @@ function App() {
               </ProtectedRoute>
             }
           />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <ToastContainer
-          position="top-right"
-          autoClose={5000}
-          hideProgressBar={false}
-          newestOnTop={false}
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-        />
-      </div>
+
+        <ToastContainer position="top-right" autoClose={4000} />
+      </MainLayout>
     </Router>
   );
 }
-
-export default App;
