@@ -13,7 +13,6 @@ import "react-toastify/dist/ReactToastify.css";
 
 import MainLayout from "./layout/MainLayout";
 
-
 // Pages
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
@@ -21,7 +20,7 @@ import ApplyPage from "./pages/ApplyPage";
 import Verification from "./pages/Verification";
 import Manager from "./pages/Manager";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
-import Chatbot from "./components/Chatbot";
+import MiniChatbot from "./components/MiniChatbot";
 
 // Utils
 import { auth } from "./utils/auth";
@@ -72,7 +71,9 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <div className="p-4">
-                  <Chatbot />
+                  {/* Only MiniChatbot and VoiceAgentButton should be present. */}
+                  <MiniChatbot />
+                  {/* VoiceAgentButton is already included in MiniChatbot, so no need to add separately unless required elsewhere. */}
                 </div>
               </ProtectedRoute>
             }

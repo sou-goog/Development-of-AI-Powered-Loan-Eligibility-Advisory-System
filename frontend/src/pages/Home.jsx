@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Bot, FileText, TrendingUp, ArrowRight, Shield } from "lucide-react";
+import MiniChatbot from "../components/MiniChatbot";
 
 /*
   Redesigned Home Page
@@ -13,6 +14,7 @@ import { Bot, FileText, TrendingUp, ArrowRight, Shield } from "lucide-react";
 */
 
 export default function Home() {
+  const [showMiniChatbot, setShowMiniChatbot] = React.useState(false);
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-100">
       {/* Hero */}
@@ -54,14 +56,19 @@ export default function Home() {
               Get Started <ArrowRight className="w-5 h-5" />
             </Link>
 
-            <Link
-              to="/apply-chat"
+            <button
+              type="button"
               className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 font-medium shadow hover:bg-slate-50 transition flex items-center gap-2"
+              onClick={() => setShowMiniChatbot(true)}
             >
               Try AI Assistant <Bot className="w-5 h-5" />
-            </Link>
+            </button>
           </motion.div>
         </div>
+      {/* MiniChatbot popup, shown when button is clicked */}
+      {showMiniChatbot && (
+        <MiniChatbot isMinimized={false} onToggleMinimize={() => setShowMiniChatbot(false)} />
+      )}
 
         {/* Right: Visual */}
         <motion.div

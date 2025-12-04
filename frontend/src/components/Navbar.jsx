@@ -24,14 +24,31 @@ import {
 */
 
 export default function Navbar() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
+  const userDropdownRef = React.useRef(null);
+  const userIconRef = React.useRef(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
   const isAuthenticated = auth.isAuthenticated();
   const isManager = auth.isManager();
   const user = auth.getUser();
+
+  React.useEffect(() => {
+    if (!showUserDropdown) return;
+    function handleClickOutside(event) {
+      if (
+        userDropdownRef.current &&
+        !userDropdownRef.current.contains(event.target) &&
+        userIconRef.current &&
+        !userIconRef.current.contains(event.target)
+      ) {
+        setShowUserDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showUserDropdown]);
 
   const handleLogout = () => {
     auth.logout();
@@ -47,6 +64,8 @@ export default function Navbar() {
       icon: BarChart3,
       show: isAuthenticated && isManager,
     },
+    { label: "Help", href: "/help", icon: Shield, show: true },
+    { label: "Contact Us", href: "/contact", icon: User, show: true },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -80,6 +99,7 @@ export default function Navbar() {
           {isAuthenticated ? (
             <div className="relative">
               <button
+                ref={userIconRef}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm focus:outline-none"
                 onClick={() => setShowUserDropdown((v) => !v)}
               >
@@ -88,6 +108,7 @@ export default function Navbar() {
               <AnimatePresence>
                 {showUserDropdown && (
                   <motion.div
+                    ref={userDropdownRef}
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
@@ -100,6 +121,18 @@ export default function Navbar() {
                         <div className="text-xs text-gray-500">{user?.email || "No email"}</div>
                       </div>
                     </div>
+                    <Link
+                      to="/help"
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold mb-1"
+                    >
+                      <Shield className="w-4 h-4 text-indigo-700" /> Help
+                    </Link>
+                    <Link
+                      to="/contact"
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold mb-1"
+                    >
+                      <User className="w-4 h-4 text-indigo-700" /> Contact Us
+                    </Link>
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm mt-2 font-semibold"

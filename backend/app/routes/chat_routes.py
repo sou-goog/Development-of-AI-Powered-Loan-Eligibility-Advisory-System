@@ -1,4 +1,4 @@
-﻿"""
+"""
 Chat Routes for AI-powered conversations
 """
 
@@ -12,129 +12,9 @@ from app.services.report_service import ReportService
 from app.services.email_service import email_service
 from app.utils.logger import get_logger
 from app.utils.security import decode_token
-from app.services.llm_selector import get_llm_service
-from app.services.conversation_service import ConversationService
 import json
 import re
 import os
-
-
-def text_to_number(text: str) -> int | None:
-    """
-    Convert a textual number to an integer.
-    Supports digits with commas/currency, plain English words, and Indian units 'lakh'/'crore'.
-    Returns integer or None if no sensible number found.
-    """
-    if not text:
-        return None
-
-    s = str(text).lower().strip()
-
-    # Strip currency symbols and commas
-    s_clean = re.sub(r'[₹$,]', '', s)
-
-    # Direct digits fallback (e.g., "120000" or "1,20,000")
-    digit_match = re.search(r'(\d[\d,]*)', s_clean)
-    if digit_match:
-        try:
-            # remove commas then int
-            val = int(digit_match.group(1).replace(',', ''))
-            return val
-        except Exception:
-            pass
-
-    # Handle explicit unit words attached to numerals or words (e.g., "twelve lakh")
-    unit_match = re.search(r'([a-z\-\s]+|\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', s_clean)
-    if unit_match:
-        num_part = unit_match.group(1).strip()
-        unit = unit_match.group(2)
-        # try parse num_part as digits first
-        try:
-            amt = float(num_part)
-        except Exception:
-            amt = _words_to_number(num_part)
-        if amt is None:
-            return None
-        mult = 100000 if 'lakh' in unit else 10000000
-        try:
-            return int(round(amt * mult))
-        except Exception:
-            return None
-
-    # Try converting pure-word numbers (e.g., "one hundred twenty five thousand")
-    word_only = re.fullmatch(r'[a-z\-\s]+', s_clean)
-    if word_only:
-        val = _words_to_number(s_clean)
-        if val is not None:
-            return val
-
-    return None
-
-
-def _words_to_number(text: str) -> int | None:
-    """
-    Convert English number words to integer. Handles units up to crores (Indian scale).
-    This is a lightweight parser covering common cases like "twelve lakh", "one hundred twenty three thousand".
-    Returns None if parsing fails.
-    """
-    if not text:
-        return None
-
-    units = {
-        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-        'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
-        'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
-        'nineteen': 19
-    }
-    tens = {
-        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
-        'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90
-    }
-    scales = {
-        'hundred': 100,
-        'thousand': 1000,
-        'lakh': 100000,
-        'lakhs': 100000,
-        'crore': 10000000,
-        'crores': 10000000
-    }
-
-    # Normalize hyphens and remove 'and'
-    txt = text.replace('-', ' ').replace(' and ', ' ')
-    parts = [p for p in txt.split() if p]
-    if not parts:
-        return None
-
-    total = 0
-    current = 0
-    for word in parts:
-        if word in units:
-            current += units[word]
-        elif word in tens:
-            current += tens[word]
-        elif word == 'hundred':
-            if current == 0:
-                current = 1
-            current *= scales[word]
-        elif word in scales and word != 'hundred':
-            # multiply current (or 1) by scale and add to total
-            if current == 0:
-                current = 1
-            current *= scales[word]
-            total += current
-            current = 0
-        else:
-            # unknown token — parsing fails gracefully
-            try:
-                # try numeric parse fallback
-                n = float(word)
-                current += int(n)
-            except Exception:
-                return None
-
-    return total + current
-
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -145,145 +25,369 @@ report_service = ReportService()
 
 
 @router.post("/message", response_model=ChatResponse)
-@router.post("/message")
 async def send_message(request: ChatRequest, http_req: Request, db: Session = Depends(get_db)):
     """
-    Handles incoming chat messages, ensures application exists, processes AI response,
-    and stores the conversation.
+    Send a message to the AI chat agent
+
+    The AI will help with loan application questions and guide users through the process
     """
-
-    user_id = request.user_id
-    message = request.message.strip()
-
-    if not message:
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
-
-    # -------------------------------------------------------------------------
-    # ALWAYS CREATE APPLICATION IF application_id IS NONE
-    # -------------------------------------------------------------------------
-    if request.application_id:
-        application = (
-            db.query(LoanApplication)
-            .filter(LoanApplication.id == request.application_id)
-            .first()
-        )
-        if not application:
-            application = LoanApplication(user_id=user_id)
-            db.add(application)
-            db.commit()
-            db.refresh(application)
-
-    else:
-        application = LoanApplication(user_id=user_id)
-        db.add(application)
-        db.commit()
-        db.refresh(application)
-        request.application_id = application.id
-
-    svc = get_llm_service()
-    conv = ConversationService(db=db)
-
-    # -------------------------------------------------------------------------
-    # SAVE USER MESSAGE
-    # -------------------------------------------------------------------------
-    conv.save_user_message(user_id, application.id, message)
-
-    context = {
-        "user_id": user_id,
-        "application_id": application.id,
-        "message": message,
-        "application": application,
-    }
-
-    # -------------------------------------------------------------------------
-    # LLM HEALTH CHECK â†’ FALLBACK MODE
-    # -------------------------------------------------------------------------
-    if not svc.health():
-        reply = _fallback_single_question(context, application)
-        conv.save_bot_message(user_id, application.id, reply)
-        return {
-            "message": reply,
-            "application_id": application.id,
-            "ask_followup": True,
-        }
-
-    # -------------------------------------------------------------------------
-    # NORMAL AI FLOW
-    # -------------------------------------------------------------------------
     try:
-        reply, extracted, ask_followup = await svc.process_message(
-            message, application
-        )
-    except Exception:
-        reply = _fallback_single_question(context, application)
-        conv.save_bot_message(user_id, application.id, reply)
-        return {
-            "message": reply,
-            "application_id": application.id,
-            "ask_followup": True,
-        }
+        # Identify current user (optional)
+        user_id = None
+        try:
+            auth = http_req.headers.get("authorization") or http_req.headers.get("Authorization")
+            if auth and auth.lower().startswith("bearer "):
+                token = auth.split(" ", 1)[1].strip()
+                decoded = decode_token(token)
+                if decoded and decoded.get("email"):
+                    user = db.query(User).filter(User.email == decoded["email"]).first()
+                    if user:
+                        user_id = user.id
+        except Exception:
+            pass
 
-    # -------------------------------------------------------------------------
-    # FALLBACK: if provider did not extract structured fields, attempt local
-    # inference (handles spelled-out numbers like "twelve lakh") and update
-    # the application. Then generate a friendly acknowledgement reply.
-    # -------------------------------------------------------------------------
-    try:
-        if not extracted:
-            assistant_prompt = _get_last_assistant_prompt(db, application, user_id)
-            inferred = _infer_from_last_question(message, assistant_prompt)
-            if not inferred:
-                # As a final attempt, try extracting with the message parser
-                inferred = _extract_data_from_message(message)
 
-            if inferred:
-                # Apply inferred fields to application and commit via collector
-                try:
-                    details = await _collect_applicant_details(message, application, db, user_id)
-                except Exception:
-                    details = {
-                        "new_fields": inferred,
-                        "missing_fields": _get_missing_fields(application)
+
+        # --- USER EXISTENCE CHECK ---
+        application = None
+        user = None
+        # Check for Application ID first (Existing User workflow)
+        if request.application_id:
+            application = db.query(LoanApplication).filter(LoanApplication.id == request.application_id).first()
+            if application:
+                prev_info = {
+                    "full_name": application.full_name,
+                    "email": application.email,
+                    "phone": application.phone,
+                    "annual_income": application.annual_income,
+                    "credit_score": application.credit_score,
+                    "loan_amount": application.loan_amount,
+                    "loan_term_months": application.loan_term_months,
+                    "num_dependents": application.num_dependents,
+                    "employment_status": application.employment_status
+                }
+                ai_response = (
+                    f"Here is your saved application information:\n"
+                    f"Name: {application.full_name}\nEmail: {application.email}\nPhone: {application.phone}\n"
+                    f"Annual Income: ₹{application.annual_income:,}\nCredit Score: {application.credit_score}\nLoan Amount: ₹{application.loan_amount:,}\n"
+                    f"Loan Term: {application.loan_term_months} months\nDependents: {application.num_dependents}\nEmployment Status: {application.employment_status}\n"
+                    "\nDo you want to continue with the same information or update it? (Reply 'Continue' or 'Update')"
+                )
+                if request.message.strip().lower() == "continue":
+                    ai_response = "Please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."
+                    return {
+                        "message": ai_response,
+                        "action": "show_upload_buttons",
+                        "application_id": application.id,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info
+                    }
+                elif request.message.strip().lower() == "update":
+                    application = None  # Restart form questions
+                else:
+                    return {
+                        "message": ai_response,
+                        "application_id": application.id,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info
+                    }
+        # If no Application ID, check for user by full name (Existing User workflow)
+        elif request.message and request.message.strip():
+            name_query = request.message.strip()
+            # FIX 3: Detect if user typed an Application ID instead of a name
+            appid_match = re.fullmatch(r"(?:APP[-_])?(\d{4,12})", name_query, re.IGNORECASE)
+            if appid_match:
+                app_id_val = int(appid_match.group(1))
+                application = db.query(LoanApplication).filter(LoanApplication.id == app_id_val).first()
+                if application:
+                    request.application_id = app_id_val
+                    prev_info = {
+                        "full_name": application.full_name,
+                        "email": application.email,
+                        "phone": application.phone,
+                        "annual_income": application.annual_income,
+                        "credit_score": application.credit_score,
+                        "loan_amount": application.loan_amount,
+                        "loan_term_months": application.loan_term_months,
+                        "num_dependents": application.num_dependents,
+                        "employment_status": application.employment_status
+                    }
+                    return {
+                        "message": f"Here are your saved details for Application ID {app_id_val}. Do you want to continue or update?",
+                        "application_id": app_id_val,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info,
+                        "ask_continue_or_update": True
                     }
 
-                # Build a conversational acknowledgement and next question
-                context2 = {
-                    "intent": "providing_info",
-                    "collected_data": details.get("new_fields", {}),
-                    "missing_fields": details.get("missing_fields", [])
+            # FIX 2: Robust name search
+            clean = name_query.strip()
+            if len(clean) >= 3:
+                found_app = (
+                    db.query(LoanApplication)
+                    .filter(LoanApplication.full_name.ilike(f"%{clean}%"))
+                    .order_by(LoanApplication.created_at.desc())
+                    .first()
+                )
+            else:
+                found_app = None
+            if found_app:
+                # Found user by name, ask for Application ID (only greet once)
+                return {
+                    "message": f"Welcome back, {name_query}! Please enter your Application ID to continue.",
+                    "action": "ask_application_id"
                 }
-                # Generate an assistant-style response locally if possible
-                try:
-                    reply_local = _generate_conversational_response(message, context2, application, svc, db, user_id)
-                    if reply_local:
-                        reply = reply_local
-                        ask_followup = True if context2.get("missing_fields") else False
-                except Exception:
-                    # keep provider reply if generation fails
-                    pass
-                # Ensure extracted contains the inferred values so downstream logic persists them
-                extracted = extracted or {}
-                extracted.update(inferred)
-    except Exception:
-        # Non-fatal: proceed with provider reply
-        pass
+            else:
+                # Step-by-step form flow: track answers across chat session history
+                import re
+                session_fields = [
+                    ("full_name", "What's your full name?"),
+                    ("email", "What's your email address?"),
+                    ("phone", "What's your phone number?"),
+                    ("annual_income", "What's your annual income (in INR)?"),
+                    ("loan_amount", "What loan amount are you looking for (INR)?"),
+                    ("loan_term_months", "What loan term do you want (in months)?"),
+                    ("loan_purpose", "What is the purpose of your loan? (e.g., home, car, education, business, personal)"),
+                    ("num_dependents", "How many dependents do you have?"),
+                    ("employment_status", "What's your employment status? (salaried, self-employed, business)"),
+                    ("credit_score", "What's your current credit score?"),
+                ]
 
-    # -------------------------------------------------------------------------
-    # APPLY EXTRACTED FIELDS
-    # -------------------------------------------------------------------------
-    if extracted:
-        for field, value in extracted.items():
-            if hasattr(application, field):
-                setattr(application, field, value)
+                email_regex = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+                phone_regex = r"^(\d{10})$"
+                income_regex = r"^\d{4,9}$"
+                credit_regex = r"^\d{3}$"
+                loan_regex = r"^loan[:\s]*(\d{4,9})$"
+                term_regex = r"^term[:\s]*(\d{1,3})$"
+                dep_regex = r"^\d{1,2}$"
+                emp_regex = r"^(salaried|self-employed|business)$"
+
+                # FIX 1: Scoped chat history (per application or user)
+                collected = {}
+                if request.application_id:
+                    chat_history = (
+                        db.query(ChatSession)
+                        .filter(ChatSession.application_id == request.application_id)
+                        .order_by(ChatSession.created_at.desc())
+                        .limit(50)
+                        .all()
+                    )
+                elif user_id:
+                    chat_history = (
+                        db.query(ChatSession)
+                        .filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+                        .order_by(ChatSession.created_at.desc())
+                        .limit(50)
+                        .all()
+                    )
+                else:
+                    chat_history = []
+
+                all_user_messages = []
+                for session in reversed(chat_history):
+                    try:
+                        messages = json.loads(session.messages or "[]")
+                        for m in messages:
+                            if m.get("role") == "user" and "content" in m:
+                                all_user_messages.append(m["content"])
+                    except:
+                        pass
+                # Always include the current user message as the last one
+                all_user_messages.append(name_query)
+                for val in all_user_messages:
+                    extracted = _extract_data_from_message(val)
+                    for k, v in extracted.items():
+                        if k not in collected or collected[k] != v:
+                            collected[k] = v
+
+                # Ask only the next missing field
+                for key, question in session_fields:
+                    if key not in collected or not collected[key]:
+                        # Persist this turn so future requests can reconstruct session state
+                        try:
+                            chat_session = ChatSession(
+                                user_id=user_id,
+                                application_id=request.application_id,
+                                messages=json.dumps([
+                                    {"role": "user", "content": request.message},
+                                    {"role": "assistant", "content": question}
+                                ]),
+                                meta={"collected_values": collected} if collected else None
+                            )
+                            db.add(chat_session)
+                            db.commit()
+                        except Exception:
+                            logger.debug("Failed to persist interim chat session; continuing")
+                        return {
+                            "message": question,
+                            "action": f"ask_{key}",
+                            "collected_fields": list(collected.keys()) if collected else [],
+                            "collected_values": collected if collected else {}
+                        }
+                # If all fields are collected, prompt for document upload
+                try:
+                    chat_session = ChatSession(
+                        user_id=user_id,
+                        application_id=request.application_id,
+                        messages=json.dumps([
+                            {"role": "user", "content": request.message},
+                            {"role": "assistant", "content": "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."}
+                        ]),
+                        meta={"collected_values": collected} if collected else None
+                    )
+                    db.add(chat_session)
+                    db.commit()
+                except Exception:
+                    logger.debug("Failed to persist interim complete-session; continuing")
+                return {
+                    "message": "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip.",
+                    "action": "show_upload_buttons",
+                    "collected_fields": list(collected.keys()) if collected else [],
+                    "collected_values": collected if collected else {}
+                }
+        # If neither Application ID nor name found, start New User workflow
+        # ...existing code for conversation analysis and question flow...
+
+        # Analyze user message and determine next steps
+        conversation_context = _analyze_conversation(request.message, application, db=db, user_id=user_id)
+
+        # Choose provider per request if provided; else fall back to default
+        svc = get_llm_service(provider_override=request.provider) if request.provider else llm_service
+
+        # Generate AI response based on conversation context (include DB/user for multi-turn history)
+        ai_response = _generate_conversational_response(request.message, conversation_context, application, svc, db=db, user_id=user_id)
+
+
+        # Handle specific actions based on conversation context
+        action_result = None
+        if conversation_context.get("action") == "collect_details":
+            action_result = await _collect_applicant_details(request.message, application, db, user_id)
+            # If all required fields are collected, save as new application and show document upload prompt
+            if action_result and action_result.get("application_created") and application is None:
+                # Find latest application for user
+                latest_app = db.query(LoanApplication).filter(LoanApplication.user_id == user_id).order_by(LoanApplication.created_at.desc()).first()
+                if latest_app:
+                    ai_response = "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."
+                    return {
+                        "message": ai_response,
+                        "action": "show_upload_buttons",
+                        "application_id": latest_app.id,
+                        "collected_fields": action_result.get("collected_fields", []),
+                        "collected_values": action_result.get("collected_values", {})
+                    }
+        elif conversation_context.get("action") == "predict_eligibility":
+            action_result = await _perform_eligibility_check(application, db)
+        elif conversation_context.get("action") == "generate_report":
+            action_result = await _generate_loan_report(application, db)
+        elif conversation_context.get("action") == "send_otp":
+            action_result = await _send_verification_otp(application, db)
+
+        # Auto-trigger eligibility check if all required fields are now collected
+        if not action_result and application and _has_required_fields(application) and conversation_context.get("intent") == "providing_info":
+            # All fields collected - automatically run eligibility check
+            action_result = await _perform_eligibility_check(application, db)
+            # Update response to reflect the automatic check
+            if "Perfect! I have all the key information" in ai_response:
+                ai_response = ai_response.replace(
+                    "This will just take a moment...",
+                    "Based on the information you've shared, here's what I found:"
+                )
+
+        # Save chat message to database
+        # Store meta so we can reconstruct collected fields across turns before application exists
+        assistant_meta = {}
+        if action_result and isinstance(action_result, dict):
+            if "collected_fields" in action_result:
+                assistant_meta["collected_fields"] = action_result["collected_fields"]
+            if "application_created" in action_result:
+                assistant_meta["application_created"] = action_result["application_created"]
+            if "application_id" in action_result:
+                assistant_meta["application_id"] = action_result.get("application_id")
+        # Record the last asked question key (if any)
+        if conversation_context.get("next_question_key"):
+            assistant_meta["last_question"] = conversation_context.get("next_question_key")
+
+        # Aggregate collected values for pre-application persistence
+        aggregated_meta = None
+        try:
+            aggregated_meta = {"collected_values": {}}
+            # Merge any extracted values from this turn
+            if isinstance(conversation_context.get("collected_data"), dict):
+                for k, v in conversation_context["collected_data"].items():
+                    aggregated_meta["collected_values"][k] = v
+            # Also mark keys from action_result if present
+            if assistant_meta.get("collected_fields"):
+                for k in assistant_meta["collected_fields"]:
+                    aggregated_meta["collected_values"].setdefault(k, True)
+        except Exception:
+            aggregated_meta = None
+
+        chat_session = ChatSession(
+            user_id=user_id,
+            application_id=request.application_id,
+            messages=json.dumps([
+                {"role": "user", "content": request.message},
+                {"role": "assistant", "content": ai_response, "meta": assistant_meta or None}
+            ]),
+            meta=aggregated_meta
+        )
+        db.add(chat_session)
         db.commit()
 
-    conv.save_bot_message(user_id, application.id, reply)
+        # Prepare response
+        suggestions_text = _generate_suggestions(request.message, conversation_context)
+        # Build structured suggestions (id + label)
+        structured = _to_structured_suggestions(suggestions_text, conversation_context)
 
-    return {
-        "message": reply,
-        "application_id": application.id,
-        "ask_followup": ask_followup,
-    }
+        response_data = {
+            "message": ai_response,
+            "application_id": request.application_id,
+            "suggested_next_steps": suggestions_text,
+            "suggestions": structured,
+        }
+
+        # Add action results if any
+        if action_result:
+            response_data.update(action_result)
+
+        # Add UI action hint to open form when basics are present
+        try:
+            should_open_form = False
+            intent = conversation_context.get("intent")
+            missing = conversation_context.get("missing_fields", [])
+
+            # If we have an application and no missing fields, prompt to open form
+            if application and intent in {"providing_info", "loan_inquiry"} and not missing:
+                should_open_form = True
+
+            # If no application yet, but the message contains key basics, also suggest form
+            collected = conversation_context.get("collected_data", {})
+            basics = ["annual_income", "credit_score", "loan_amount"]
+            if not application and intent in {"providing_info", "loan_inquiry"} and all(k in collected and collected[k] for k in basics):
+                should_open_form = True
+
+            if should_open_form:
+                response_data["action"] = "open_form"
+        except Exception as e:
+            logger.warning(f"Failed to compute action hint: {e}")
+
+        # Echo collected fields/values this turn for UI awareness
+        try:
+            if isinstance(conversation_context.get("collected_data"), dict) and conversation_context["collected_data"]:
+                response_data["collected_fields"] = list(conversation_context["collected_data"].keys())
+                response_data["collected_values"] = conversation_context["collected_data"]
+        except Exception:
+            pass
+
+        logger.info(f"Chat message processed for application {request.application_id}")
+        return response_data
+
+    except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process message"
+        )
 
 
 @router.post("/open", response_model=ChatResponse)
@@ -423,32 +527,143 @@ async def clear_llm_cache():
 
 def _analyze_conversation(message: str, application, db: Session = None, user_id: int | None = None) -> dict:
     """
-    Simple analyzer that identifies intent category.
-    Removed old ChatSession merging logic completely.
+    Analyze user message to determine conversation context and next actions
+
+    Returns:
+        dict: Context information including detected intent and required actions
     """
+    message_lower = message.lower()
 
-    msg = message.lower()
+    context = {
+        "intent": "general_inquiry",
+        "action": None,
+        "collected_data": {},
+        "missing_fields": []
+    }
 
-    if any(w in msg for w in ["income", "earn", "salary"]):
-        return {"intent": "income"}
+    # Check for greetings and introductions
+    if any(word in message_lower for word in ["hello", "hi", "hey", "start", "begin"]):
+        context["intent"] = "greeting"
+        context["action"] = "collect_details"
 
-    if any(w in msg for w in ["name", "i am", "i'm"]):
-        return {"intent": "name"}
+    # Check for personal information sharing
+    elif any(word in message_lower for word in ["name", "age", "income", "salary"]):
+        context["intent"] = "providing_info"
+        context["action"] = "collect_details"
 
-    if "loan" in msg:
-        return {"intent": "loan_amount"}
+    # Detect likely "name-only" message (e.g., "Nishtha Hooda") and treat as providing info
+    # Only when: 1) 1-3 words, 2) All words Title Case, 3) No common loan keywords
+    elif (
+        (lambda s: (
+            1 <= len(s.split()) <= 3 and
+            not any(w.lower() in {"loan","apply","application","amount","borrow","credit","score","income","salary"} for w in s.split()) and
+            all(w[0].isupper() and any(c.islower() for c in w[1:]) for w in s.split() if w and w[0].isalpha()) and
+            re.fullmatch(r"^[A-Za-z][A-Za-z\-'\.]+(?:\s+[A-Za-z][A-Za-z\-'\.]+){0,2}$", s)
+        ))(message.strip())
+    ):
+        context["intent"] = "providing_info"
+        context["action"] = "collect_details"
 
-    if any(w in msg for w in ["credit", "cibil", "score"]):
-        return {"intent": "credit_score"}
+    # Check for loan amount inquiries
+    elif any(word in message_lower for word in ["loan", "amount", "borrow", "need money"]):
+        context["intent"] = "loan_inquiry"
+        context["action"] = "collect_details"
 
-    if any(w in msg for w in ["email", "@"]):
-        return {"intent": "email"}
+    # Check for document upload mentions
+    elif any(word in message_lower for word in ["document", "upload", "file", "bank statement", "id"]):
+        context["intent"] = "document_upload"
+        context["action"] = "request_document"
 
-    if any(w in msg for w in ["salaried", "business", "self"]):
-        return {"intent": "employment"}
+    # Check for eligibility check requests
+    elif any(word in message_lower for word in ["eligible", "check", "qualify", "eligibility"]):
+        context["intent"] = "eligibility_check"
+        if application and _has_required_fields(application):
+            context["action"] = "predict_eligibility"
+        else:
+            context["action"] = "collect_details"
 
-    return {"intent": "unknown"}
+    # Check for OTP verification requests
+    elif any(word in message_lower for word in ["verify", "otp", "code", "email"]):
+        context["intent"] = "verification"
+        context["action"] = "send_otp"
 
+    # Extract potential data from message
+    context["collected_data"] = _extract_data_from_message(message)
+
+    # If message is numeric or unit-based without keywords, infer based on last assistant question
+    if db is not None:
+        # Prefer explicit last_question key from previous assistant meta
+        last_q_key = _get_last_assistant_question_key(db, application, user_id)
+        msg = message.strip().lower()
+        digits = re.sub(r"\D", "", msg)
+        unit_match = re.search(r"(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)", msg)
+        inferred = {}
+        if last_q_key:
+            if last_q_key == "annual_income":
+                if unit_match:
+                    amt = float(unit_match.group(1)); mult = 100000 if 'lakh' in unit_match.group(2) else 10000000
+                    inferred = {"annual_income": int(round(amt * mult))}
+                elif digits and 4 <= len(digits) <= 8:
+                    inferred = {"annual_income": int(digits)}
+            elif last_q_key == "loan_amount":
+                if unit_match:
+                    amt = float(unit_match.group(1)); mult = 100000 if 'lakh' in unit_match.group(2) else 10000000
+                    inferred = {"loan_amount": int(round(amt * mult))}
+                elif digits and 4 <= len(digits) <= 8:
+                    inferred = {"loan_amount": int(digits)}
+            elif last_q_key == "credit_score":
+                if digits and len(digits) == 3 and 300 <= int(digits) <= 900:
+                    inferred = {"credit_score": int(digits)}
+        # Fallback to text-based detection if nothing inferred via key
+        if not inferred:
+            inferred = _infer_from_last_question(message, _get_last_assistant_prompt(db, application, user_id))
+        if inferred:
+            context["collected_data"].update(inferred)
+
+    # If we have a logged-in user and no application yet, merge previously collected fields/values
+    if user_id and not application and db is not None:
+        try:
+            recent = (
+                db.query(ChatSession)
+                .filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+                .order_by(ChatSession.created_at.desc())
+                .limit(10)
+                .all()
+            )
+            previously_collected = set()
+            previously_values = {}
+            for s in recent:
+                try:
+                    msgs = json.loads(s.messages) if isinstance(s.messages, str) else (s.messages or [])
+                    for m in msgs:
+                        meta = (m or {}).get("meta")
+                        if isinstance(meta, dict) and "collected_fields" in meta and isinstance(meta["collected_fields"], list):
+                            previously_collected.update([str(k) for k in meta["collected_fields"]])
+                    # Also read aggregated meta.collected_values if available
+                    if s.meta and isinstance(s.meta, dict):
+                        cv = s.meta.get("collected_values")
+                        if isinstance(cv, dict):
+                            previously_values.update(cv)
+                except Exception:
+                    continue
+            # Promote previously collected keys so we don't re-ask
+            for key in previously_collected:
+                context["collected_data"].setdefault(key, True)
+            # Merge previously known values (do not overwrite current turn)
+            for k, v in previously_values.items():
+                context["collected_data"].setdefault(k, v)
+        except Exception:
+            pass
+    # If user provided structured fields (e.g., an email), treat as providing info
+    if not context.get("action") and context["collected_data"]:
+        context["intent"] = "providing_info"
+        context["action"] = "collect_details"
+
+    # Determine missing fields if we have an application
+    if application:
+        context["missing_fields"] = _get_missing_fields(application)
+
+    return context
 
 
 def _get_last_assistant_prompt(db: Session, application, user_id: int | None) -> str:
@@ -490,10 +705,6 @@ def _infer_from_last_question(user_message: str, assistant_prompt: str) -> dict:
             return {"annual_income": int(round(amt * mult))}
         if digits and 4 <= len(digits) <= 8:
             return {"annual_income": int(digits)}
-        # Try parsing spelled-out numbers like "twelve lakh" or "one hundred twenty five thousand"
-        n = text_to_number(user_message)
-        if n and n >= 1000:
-            return {"annual_income": int(n)}
     # Loan amount
     if "loan amount" in assistant_prompt.lower():
         if unit_match:
@@ -502,19 +713,12 @@ def _infer_from_last_question(user_message: str, assistant_prompt: str) -> dict:
             return {"loan_amount": int(round(amt * mult))}
         if digits and 4 <= len(digits) <= 8:
             return {"loan_amount": int(digits)}
-        n = text_to_number(user_message)
-        if n and n >= 1000:
-            return {"loan_amount": int(n)}
     # Credit score
     if "credit score" in assistant_prompt.lower():
         if digits and len(digits) == 3:
             val = int(digits)
             if 300 <= val <= 900:
                 return {"credit_score": val}
-        # spelled-out credit scores like "six hundred and fifty"
-        n = text_to_number(user_message)
-        if n and 300 <= n <= 900:
-            return {"credit_score": int(n)}
     return {}
 
 
@@ -593,86 +797,63 @@ def _generate_conversational_response(message: str, context: dict, application, 
 
     elif intent == "providing_info":
         collected_data = context.get("collected_data", {})
-        if collected_data:
-            # Acknowledge what they shared
-            data_summary = []
-            for k, v in collected_data.items():
-                # Skip placeholder booleans like True (used to avoid re-asking)
-                if isinstance(v, bool):
-                    continue
-                if k == "annual_income":
-                    data_summary.append(f"annual income of â‚¹{v:,}")
-                elif k == "loan_amount":
-                    data_summary.append(f"loan amount of â‚¹{v:,}")
-                elif k == "credit_score":
-                    data_summary.append(f"credit score of {v}")
-                elif k == "employment_status":
-                    data_summary.append(f"employment as {v}")
-                elif k == "num_dependents":
-                    data_summary.append(f"{v} dependent{'s' if v != 1 else ''}")
-                else:
-                    data_summary.append(f"{k}: {v}")
-            
-            if data_summary:
-                response = f"Thank you for sharing that information. I've noted your {', '.join(data_summary)}. "
+        # Acknowledge what was shared
+        data_summary = []
+        for k, v in collected_data.items():
+            if isinstance(v, bool):
+                continue
+            if k == "annual_income":
+                data_summary.append(f"annual income of ₹{v:,}")
+            elif k == "loan_amount":
+                data_summary.append(f"loan amount of ₹{v:,}")
+            elif k == "credit_score":
+                data_summary.append(f"credit score of {v}")
+            elif k == "employment_status":
+                data_summary.append(f"employment as {v}")
+            elif k == "num_dependents":
+                data_summary.append(f"{v} dependent{'s' if v != 1 else ''}")
             else:
-                response = "Thank you for sharing that information. "
-            
-            if application:
-                missing = context.get("missing_fields", [])
-                if missing:
-                    # Guide them to next step conversationally
-                    next_field = missing[0]
-                    key_map = {
-                        "annual income": "annual_income",
-                        "credit score": "credit_score",
-                        "loan amount": "loan_amount",
-                        "number of dependents": "num_dependents",
-                        "employment status": "employment_status",
-                    }
-                    context["next_question_key"] = key_map.get(next_field, next_field)
-                    if next_field == "annual income":
-                        response += "To help determine the right loan amount for you, could you tell me your annual income?"
-                    elif next_field == "credit score":
-                        response += "Your credit score helps us understand your eligibility better. What's your current credit score?"
-                    elif next_field == "loan amount":
-                        response += "What loan amount are you looking to apply for?"
-                    elif next_field == "number of dependents":
-                        response += "How many dependents do you have? This helps us assess your financial situation."
-                    elif next_field == "employment status":
-                        response += "What's your current employment status? Are you salaried, self-employed, or in business?"
-                    else:
-                        response += f"To continue with your application, I need your {next_field}. Could you please share that?"
-                else:
-                    # All info collected - guide to next step
-                    response += "Perfect! I have all the key information I need. Let me run a quick eligibility check to see what loan options might be available for you. This will just take a moment..."
-                    # Auto-trigger eligibility check
-                    context["action"] = "predict_eligibility"
-            else:
-                # No application yet. Guide to the next field based on what was just provided.
-                collected = context.get("collected_data", {}) or {}
-                if "email" in collected and "full_name" not in collected:
-                    # User gave email now; don't re-ask name, move forward
-                    response += "Thanks! Iâ€™ve noted your email. Could you share your annual income (in INR)?"
-                    context["next_question_key"] = "annual_income"
-                else:
-                    # Ask for the next most helpful field
-                    order = [
-                        ("full_name", "What's your full name?"),
-                        ("email", "What's your email address?"),
-                        ("annual_income", "What's your annual income (in INR)?"),
-                        ("credit_score", "What's your current credit score?"),
-                        ("loan_amount", "What loan amount are you looking for (INR)?"),
-                        ("employment_status", "What's your employment status (salaried, self-employed, business)?"),
-                        ("num_dependents", "How many dependents do you have?"),
-                    ]
-                    for key, question in order:
-                        if key not in collected or not collected.get(key):
-                            response += f" {question}"
-                            context["next_question_key"] = key
-                            break
+                data_summary.append(f"{k}: {v}")
+        if data_summary:
+            response = f"Thank you for sharing that information. I've noted your {', '.join(data_summary)}. "
         else:
-            response = "I understand you're sharing some information. Could you please be more specific about what details you'd like to provide?"
+            response = "Thank you for sharing that information. "
+
+        # Always ask for the next missing field, one by one
+        required_order = [
+            ("full_name", "What's your full name?"),
+            ("email", "What's your email address?"),
+            ("annual_income", "What's your annual income (in INR)?"),
+            ("credit_score", "What's your current credit score?"),
+            ("loan_amount", "What loan amount are you looking for (INR)?"),
+            ("employment_status", "What's your employment status? Are you salaried, self-employed, or in business?"),
+            ("num_dependents", "How many dependents do you have?")
+        ]
+        missing = context.get("missing_fields", [])
+        collected = context.get("collected_data", {}) or {}
+        next_field = None
+        for key, question in required_order:
+            # If this field is missing, ask for it next
+            display_map = {
+                "annual_income": "annual income",
+                "credit_score": "credit score",
+                "loan_amount": "loan amount",
+                "num_dependents": "number of dependents",
+                "employment_status": "employment status",
+                "full_name": "full name",
+                "email": "email address"
+            }
+            display_name = display_map.get(key, key)
+            if display_name in missing:
+                next_field = key
+                response += f" {question}"
+                context["next_question_key"] = key
+                break
+
+        # If all fields are collected, prompt for document upload
+        if not missing:
+            response += "Perfect! I have all the key information I need. Please upload your bank statement or ID proof to continue with document verification."
+            context["action"] = "request_document"
 
     elif intent == "loan_inquiry":
         response = "I'd be happy to help you with your loan application! To determine the best loan amount and terms for you, I need some basic information. Let's start with your annual income - this helps me understand what loan amounts might work for your situation."
@@ -793,45 +974,76 @@ def _fallback_single_question(context: dict, application) -> str:
 
 async def _collect_applicant_details(message: str, application, db: Session, user_id: int | None = None):
     """
-    Extracts applicant data from message and updates the application.
-    Always updates the existing application and never merges old values.
+    Extract and save applicant details from conversation
     """
+    extracted_data = _extract_data_from_message(message)
 
-    extracted = _extract_data_from_message(message)
+    if not extracted_data:
+        return None
 
-    # If nothing extracted â†’ no update
-    if not extracted:
-        return {
-            "application_created": False,
-            "new_fields": {},
-            "missing_fields": [],
-        }
+    # Create or update application
+    if not application:
+        # Need basic info to create application
+        if "email" in extracted_data:
+            # Merge previously collected values for this user (pre-application)
+            merged_values = {}
+            try:
+                if user_id:
+                    recent = (
+                        db.query(ChatSession)
+                        .filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+                        .order_by(ChatSession.created_at.desc())
+                        .limit(15)
+                        .all()
+                    )
+                    for s in reversed(recent):  # older first, then newer overrides
+                        if s.meta and isinstance(s.meta, dict):
+                            cv = s.meta.get("collected_values")
+                            if isinstance(cv, dict):
+                                merged_values.update(cv)
+            except Exception:
+                pass
 
-    # Update application fields (latest wins)
-    for field, value in extracted.items():
-        if hasattr(application, field):
-            setattr(application, field, value)
+            # Latest extraction should win over historical values
+            candidate = {**merged_values, **extracted_data}
 
-    db.commit()
-
-    # Identify missing fields after update
-    required = [
-        "full_name",
-        "email",
-        "annual_income",
-        "credit_score",
-        "loan_amount",
-        "employment_status",
-        "num_dependents",
-    ]
-    missing = [f for f in required if not getattr(application, f)]
+            # Create new application with available data
+            application = LoanApplication(
+                user_id=user_id,
+                full_name=candidate.get("full_name", ""),
+                email=candidate.get("email", ""),
+                phone=candidate.get("phone", ""),
+                annual_income=candidate.get("annual_income", 0),
+                credit_score=candidate.get("credit_score", 0),
+                loan_amount=candidate.get("loan_amount", 0),
+                loan_term_months=candidate.get("loan_term_months", 12),
+                num_dependents=candidate.get("num_dependents", 0),
+                employment_status=candidate.get("employment_status", "unemployed")
+            )
+            db.add(application)
+            db.commit()
+            db.refresh(application)
+        else:
+            # Return partial fields so frontend can persist progress until email arrives
+            return {
+                "application_created": False,
+                "application_id": None,
+                "collected_fields": list(extracted_data.keys()),
+                "collected_values": extracted_data
+            }
+    else:
+        # Update existing application: always overwrite with new user data
+        for field, value in extracted_data.items():
+            if hasattr(application, field):
+                setattr(application, field, value)
+        db.commit()
 
     return {
-        "application_created": False,
-        "new_fields": extracted,
-        "missing_fields": missing,
+        "application_created": application is not None,
+        "application_id": application.id if application else None,
+        "collected_fields": list(extracted_data.keys()),
+        "collected_values": extracted_data
     }
-
 
 
 async def _perform_eligibility_check(application, db: Session):
@@ -944,36 +1156,37 @@ def _extract_data_from_message(message: str) -> dict:
     extracted = {}
     message_lower = message.lower()
     message_stripped = message.strip()
-
-    # Extract numbers that might be income, loan amount, credit score, etc.
     import re
 
     # Email address
     email_match = re.search(r'([a-zA-Z0-9_.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+)', message)
     if email_match:
         extracted["email"] = email_match.group(1)
+    # Fallback: treat a plain email-like string as email
+    elif re.fullmatch(r'[a-zA-Z0-9_.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+', message_stripped):
+        extracted["email"] = message_stripped
 
     # Name phrases: "my name is X", "I'm X", "I am X", "This is X"
     name_phrase = re.search(r"(?:my\s+name\s+is|i\s*am|i'm|this\s+is)\s+([A-Za-z][A-Za-z\-']+(?:\s+[A-Za-z][A-Za-z\-']+){0,3})", message_lower, re.IGNORECASE)
     if name_phrase:
         name_val = name_phrase.group(1).strip()
-        # Title-case the name reasonably
         extracted["full_name"] = " ".join([p.capitalize() for p in name_val.split()])
 
-    # Name-only message fallback (restrict to Title Case names and avoid generic loan words)
+    employment_statuses = {"salaried": "salaried", "self-employed": "self-employed", "business": "business"}
+    if message_stripped.lower() in employment_statuses:
+        extracted["employment_status"] = employment_statuses[message_stripped.lower()]
     if "full_name" not in extracted:
         words = message_stripped.split()
-        loan_keywords = {"loan", "apply", "application", "amount", "borrow", "credit", "score", "income", "salary"}
+        loan_keywords = {"loan", "apply", "application", "amount", "borrow", "credit", "score", "income", "salary", "salaried", "self-employed", "business"}
         if (
             1 <= len(words) <= 3
             and not any(w.lower() in loan_keywords for w in words)
             and all(w[0].isupper() and any(c.islower() for c in w[1:]) for w in words if w and w[0].isalpha())
-            and re.fullmatch(r"^[A-Za-z][A-Za-z\-'\.]+(?:\s+[A-Za-z][A-Za-z\-'\.]+){0,2}$", message_stripped)
+            and re.fullmatch(r"^[A-Za-z][A-Za-z\-'.]+(?:\s+[A-Za-z][A-Za-z\-'.]+){0,2}$", message_stripped)
         ):
             extracted["full_name"] = " ".join([p[0].upper() + p[1:] if len(p) > 1 else p.upper() for p in words])
 
     # Income patterns
-    # Support lakh/crore units as well
     unit_income = re.search(r'(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', message_lower)
     if unit_income:
         amount = float(unit_income.group(1))
@@ -982,20 +1195,18 @@ def _extract_data_from_message(message: str) -> dict:
         extracted["annual_income"] = int(round(amount * multiplier))
     else:
         income_match = re.search(r'income.*?(\d{4,8})|salary.*?(\d{4,8})|earn.*?(\d{4,8})', message_lower)
+        found_income = False
         if income_match:
             for group in income_match.groups():
                 if group and len(group) >= 4:
                     extracted["annual_income"] = int(group)
+                    found_income = True
                     break
-        # Handle spelled-out numbers with units (e.g., "twelve lakh")
-        if "annual_income" not in extracted:
-            word_unit = re.search(r'([a-z\-\s]{3,})\s*(lakh|lakhs|crore|crores)', message_lower)
-            if word_unit:
-                amount_words = word_unit.group(1).strip()
-                val = _words_to_number(amount_words)
-                if val is not None:
-                    mult = 100000 if 'lakh' in word_unit.group(2) else 10000000
-                    extracted["annual_income"] = int(round(val * mult))
+        # Fallback: treat a plain 5-8 digit string as income if not already matched as loan amount
+        if not found_income and "annual_income" not in extracted:
+            plain_income = re.fullmatch(r"\d{5,8}", message_stripped)
+            if plain_income and ("loan_amount" not in extracted or int(message_stripped) != extracted["loan_amount"]):
+                extracted["annual_income"] = int(message_stripped)
 
     # Loan amount patterns
     unit_loan = re.search(r'(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', message_lower)
@@ -1006,20 +1217,18 @@ def _extract_data_from_message(message: str) -> dict:
         extracted["loan_amount"] = int(round(amount * multiplier))
     else:
         loan_match = re.search(r'loan.*?(\d{4,8})|borrow.*?(\d{4,8})|need.*?(\d{4,8})', message_lower)
+        found = False
         if loan_match:
             for group in loan_match.groups():
                 if group and len(group) >= 4:
                     extracted["loan_amount"] = int(group)
+                    found = True
                     break
-        # spelled-out loan amounts like "two lakh fifty thousand"
-        if "loan_amount" not in extracted:
-            word_unit_loan = re.search(r'([a-z\-\s]{3,})\s*(lakh|lakhs|crore|crores)', message_lower)
-            if word_unit_loan:
-                words = word_unit_loan.group(1).strip()
-                val = _words_to_number(words)
-                if val is not None:
-                    mult = 100000 if 'lakh' in word_unit_loan.group(2) else 10000000
-                    extracted["loan_amount"] = int(round(val * mult))
+        # If not found, treat a plain 5-8 digit number as loan amount (if not already matched as income)
+        if not found and "loan_amount" not in extracted:
+            plain_num = re.fullmatch(r"\d{5,8}", message_stripped)
+            if plain_num and ("annual_income" not in extracted or int(message_stripped) != extracted["annual_income"]):
+                extracted["loan_amount"] = int(message_stripped)
 
     # Credit score patterns
     credit_match = re.search(r'credit.*?(\d{3})|score.*?(\d{3})', message_lower)
@@ -1028,16 +1237,14 @@ def _extract_data_from_message(message: str) -> dict:
             if group and 300 <= int(group) <= 850:
                 extracted["credit_score"] = int(group)
                 break
-    else:
-        # spelled-out credit scores
-        cs = text_to_number(message_lower)
-        if cs and 300 <= cs <= 900:
-            extracted["credit_score"] = int(cs)
 
     # Phone number
     phone_match = re.search(r'(\d{10})', message)
     if phone_match:
         extracted["phone"] = phone_match.group(1)
+    # Fallback: treat a plain 10-digit string as phone
+    elif re.fullmatch(r'\d{10}', message_stripped):
+        extracted["phone"] = message_stripped
 
     # Employment status
     if "employed" in message_lower:
@@ -1047,10 +1254,15 @@ def _extract_data_from_message(message: str) -> dict:
     elif "unemployed" in message_lower:
         extracted["employment_status"] = "unemployed"
 
-    # Dependents
+    # Dependents: match explicit phrase or infer from plain number if last question was about dependents
     dep_match = re.search(r'(\d+)\s*(?:dependent|kid|child)', message_lower)
     if dep_match:
         extracted["num_dependents"] = int(dep_match.group(1))
+    else:
+        if message_stripped.isdigit():
+            num = int(message_stripped)
+            if 0 <= num <= 20:
+                extracted["num_dependents"] = num
 
     return extracted
 
@@ -1157,4 +1369,3 @@ def _to_structured_suggestions(suggestions: list, context: dict | None) -> list:
             sid = f"provide_{label[12:].strip().replace(' ', '_')}"
         structured.append({"id": sid or "other", "label": label})
     return structured
-
