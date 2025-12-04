@@ -1,5 +1,5 @@
 // src/pages/MainDashboard.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
   LineChart,
@@ -11,18 +11,28 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import { managerAPI } from "../utils/api";
 
 function MainDashboard() {
-  // KPI Data
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    // Fetch real dashboard statistics
+    managerAPI.getStatistics().then((res) => {
+      setStats(res.data);
+    });
+  }, []);
+
+  // KPI Cards
   const kpis = [
-    { title: "Total Applications", value: 428 },
-    { title: "Eligible Applications", value: 276 },
-    { title: "Voice Calls Handled", value: 612 },
-    { title: "Average Credit Score", value: 731 },
+    { title: "Total Applications", value: stats?.total_applications || 0 },
+    { title: "Eligible Applications", value: stats?.eligible_count || 0 },
+    { title: "Voice Calls Handled", value: stats?.voice_calls || 0 },
+    { title: "Avg Eligibility Probability", value: stats ? `${(stats.avg_probability * 100).toFixed(1)}%` : "0%" },
   ];
 
-  // Line Chart – Income vs Eligibility
-  const incomeVsEligibility = [
+  // Line Chart – Income vs Eligibility Probability (dynamic if API provides)
+  const incomeVsEligibility = stats?.income_vs_eligibility || [
     { income: "20K", score: 0.42 },
     { income: "40K", score: 0.58 },
     { income: "60K", score: 0.71 },
@@ -30,8 +40,8 @@ function MainDashboard() {
     { income: "100K", score: 0.88 },
   ];
 
-  // Bar Chart – Loan Amount Ranges
-  const loanRanges = [
+  // Bar Chart – Loan Amount Ranges (dynamic if API provides)
+  const loanRanges = stats?.loan_amount_distribution || [
     { range: "< 2L", count: 95 },
     { range: "2–5L", count: 162 },
     { range: "5–10L", count: 112 },
@@ -57,11 +67,10 @@ function MainDashboard() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
         {/* Income vs Eligibility Chart */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
           <p className="text-sm mb-2 font-semibold">
-            Income vs Eligibility Score
+            Income vs Eligibility Probability
           </p>
           <div className="h-60">
             <ResponsiveContainer width="100%" height="100%">
@@ -91,7 +100,6 @@ function MainDashboard() {
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
     </AdminLayout>
   );

@@ -2,7 +2,12 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-// Pages
+// Landing + Application pages
+import Home from "./pages/Home";
+import ApplyPage from "./pages/ApplyPage";
+import AuthPage from "./pages/AuthPage";
+
+// Dashboard pages
 import Login from "./pages/Login";
 import MainDashboard from "./pages/MainDashboard";
 import LoanAnalytics from "./pages/LoanAnalytics";
@@ -12,16 +17,26 @@ import ApplicationsTable from "./pages/ApplicationsTable";
 import Transcripts from "./pages/Transcripts";
 import SystemSettings from "./pages/SystemSettings";
 import ProjectOverview from "./pages/ProjectOverview";
-
-// ⭐ NEW PAGE IMPORT
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
+
+// Voice agent
+import VoiceAgentRealtime_v2 from "./components/VoiceAgentRealtime_v2";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Login Pages */}
-        <Route path="/" element={<Login />} />
+
+        {/* Landing Page */}
+        <Route path="/" element={<Home />} />
+
+        {/* Apply for Loan (chat/voice/form) */}
+        <Route path="/apply" element={<ApplyPage />} />
+
+        {/* Manager Login (User-facing login for applications) */}
+        <Route path="/auth" element={<AuthPage />} />
+
+        {/* Dashboard Admin Login */}
         <Route path="/login" element={<Login />} />
 
         {/* Dashboard Pages */}
@@ -34,14 +49,15 @@ function App() {
         <Route path="/settings" element={<SystemSettings />} />
         <Route path="/overview" element={<ProjectOverview />} />
 
-        {/* ⭐ NEW LOAN REJECTION DASHBOARD ROUTE */}
-        <Route
-          path="/loan-rejection/:userId"
-          element={<LoanRejectionDashboard />}
-        />
+        {/* Loan Rejection Details */}
+        <Route path="/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
 
-        {/* Wrong URL → Redirect to login */}
-        <Route path="*" element={<Navigate to="/login" />} />
+        {/* Voice agent (if needed) */}
+        <Route path="/voice-agent" element={<VoiceAgentRealtime_v2 />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" />} />
+
       </Routes>
     </BrowserRouter>
   );

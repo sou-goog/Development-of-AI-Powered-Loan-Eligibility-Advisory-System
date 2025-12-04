@@ -1,5 +1,5 @@
 // src/pages/VoiceAnalytics.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
   BarChart,
@@ -14,73 +14,42 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { voiceAPI, managerAPI } from "../utils/api";
 
 function VoiceAnalytics() {
-  // KPI Data
-  const totalCalls = 612;
-  const avgDuration = "1m 42s";
-  const aiLatency = "0.8 sec";
-  const successRate = "89%";
-
-  // Success vs Failed Calls
-  const callStatus = [
-    { name: "Successful Calls", value: 546 },
-    { name: "Failed Calls", value: 66 },
-  ];
-  const COLORS = ["#34d399", "#ef4444"];
-
-  // Hourly Call Trend
-  const hourlyCalls = [
-    { hour: "10 AM", calls: 42 },
-    { hour: "11 AM", calls: 65 },
-    { hour: "12 PM", calls: 88 },
-    { hour: "1 PM", calls: 73 },
-    { hour: "2 PM", calls: 52 },
-    { hour: "3 PM", calls: 46 },
-  ];
-
-  // Keywords
-  const keywords = [
-    { word: "interest rate", count: 122 },
-    { word: "loan amount", count: 98 },
-    { word: "documents", count: 75 },
-    { word: "credit score", count: 63 },
-    { word: "eligibility", count: 54 },
-  ];
-
-  // -------------------------
-  // ⭐ NEW: Riya AI Call Logs + Popup
-  // -------------------------
+  const [stats, setStats] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [selectedCall, setSelectedCall] = useState(null);
 
-  const callLogs = [
-    {
-      callId: "C101",
-      duration: "2m 20s",
-      sentiment: "Positive",
-      aiSummary: "Customer is interested in loan options. No issues detected.",
-    },
-    {
-      callId: "C102",
-      duration: "4m 11s",
-      sentiment: "Negative",
-      aiSummary:
-        "Customer is confused about document requirements. Follow-up needed.",
-    },
-    {
-      callId: "C103",
-      duration: "1m 45s",
-      sentiment: "Neutral",
-      aiSummary:
-        "Customer asked about interest rates. No negative indicators found.",
-    },
-  ];
+  const [callLogs, setCallLogs] = useState([]);
+  const [hourlyCalls, setHourlyCalls] = useState([]);
+  const [callStatus, setCallStatus] = useState([]);
+  const [keywords, setKeywords] = useState([]);
+
+  useEffect(() => {
+    // Fetch manager stats including eligibility probability
+    managerAPI.getStatistics().then((res) => {
+      setStats(res.data);
+    });
+
+    // Fetch voice stats (calls, successes, failures)
+    voiceAPI.checkStatus().then((res) => {
+      setHourlyCalls(res.data.hourly_calls || []);
+      setCallStatus([
+        { name: "Successful Calls", value: res.data.successful_calls || 0 },
+        { name: "Failed Calls", value: res.data.failed_calls || 0 },
+      ]);
+      setCallLogs(res.data.call_logs || []);
+      setKeywords(res.data.keywords || []);
+    });
+  }, []);
 
   const openPopup = (call) => {
     setSelectedCall(call);
     setShowPopup(true);
   };
+
+  const COLORS = ["#34d399", "#ef4444"];
 
   return (
     <AdminLayout>
@@ -90,27 +59,29 @@ function VoiceAnalytics() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
           <p className="text-sm text-slate-400">Total Calls</p>
-          <p className="text-3xl font-bold text-white mt-1">{totalCalls}</p>
+          <p className="text-3xl font-bold text-white mt-1">
+            {stats?.total_calls || 0}
+          </p>
         </div>
 
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
           <p className="text-sm text-slate-400">Success Rate</p>
           <p className="text-3xl font-bold text-green-400 mt-1">
-            {successRate}
+            {stats?.success_rate || "0%"}
           </p>
         </div>
 
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
           <p className="text-sm text-slate-400">Avg Call Duration</p>
           <p className="text-3xl font-bold text-blue-400 mt-1">
-            {avgDuration}
+            {stats?.avg_duration || "0s"}
           </p>
         </div>
 
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-          <p className="text-sm text-slate-400">AI Response Latency</p>
+          <p className="text-sm text-slate-400">Avg Eligibility Probability</p>
           <p className="text-3xl font-bold text-yellow-400 mt-1">
-            {aiLatency}
+            {((stats?.avg_probability || 0) * 100).toFixed(1)}%
           </p>
         </div>
       </div>
@@ -180,12 +151,9 @@ function VoiceAnalytics() {
         </table>
       </div>
 
-      {/* ------------------------ */}
-      {/* ⭐ Riya AI Insights Table */}
-      {/* ------------------------ */}
+      {/* Riya AI Call Logs */}
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mt-8">
         <p className="text-sm font-semibold mb-3">Call Logs (Riya AI Insights)</p>
-
         <table className="w-full text-left text-sm text-slate-300">
           <thead>
             <tr className="border-b border-slate-700">
@@ -216,18 +184,14 @@ function VoiceAnalytics() {
         </table>
       </div>
 
-      {/* ------------------------ */}
-      {/* ⭐ Riya AI Popup */}
-      {/* ------------------------ */}
+      {/* Popup */}
       {showPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-slate-800 p-6 rounded-xl w-96 border border-slate-700">
             <h2 className="text-lg font-bold mb-4">Riya AI Insights</h2>
-
             <p><strong>Call ID:</strong> {selectedCall.callId}</p>
             <p className="mt-2"><strong>Summary:</strong></p>
             <p className="text-slate-300 mt-1">{selectedCall.aiSummary}</p>
-
             <button
               className="bg-red-500 text-white px-4 py-1 mt-5 rounded"
               onClick={() => setShowPopup(false)}
