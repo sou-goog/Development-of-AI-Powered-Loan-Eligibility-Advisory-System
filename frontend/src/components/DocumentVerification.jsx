@@ -156,8 +156,10 @@ export default function DocumentVerification({ applicationId, onVerified }) {
     satisfiesGroup(GROUP_IDENTITY) && satisfiesGroup(GROUP_FINANCIAL);
 
   const handlePredictEligibility = async () => {
-    if (!allDocumentsUploaded) {
-      toast.error("Please upload all required documents first.");
+    if (!requiredGroupsSatisfied) {
+      toast.error(
+        "Please upload required documents (ID + financial proof) first."
+      );
       return;
     }
 
@@ -183,8 +185,9 @@ export default function DocumentVerification({ applicationId, onVerified }) {
           📄 Document Verification & KYC
         </h2>
         <p className="text-blue-100">
-          Upload all 5 required documents. All uploads are mandatory to proceed
-          with eligibility check.
+          Upload at least one ID (Aadhaar, PAN, or KYC) and one financial proof
+          (Bank statement or Salary slip). You may upload additional documents
+          if available.
         </p>
       </div>
 

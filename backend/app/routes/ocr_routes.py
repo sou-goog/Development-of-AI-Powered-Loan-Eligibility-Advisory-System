@@ -237,8 +237,15 @@ async def verify_document(
         # Determine verification: require one identity doc and one financial doc
         identity_group = {"aadhaar", "pan", "kyc"}
         financial_group = {"bank_statement", "salary_slip"}
-        has_identity = any(d in identity_group for d in uploaded)
-        has_financial = any(d in financial_group for d in uploaded)
+        # Normalize uploaded entries to ids for safe membership checks
+        uploaded_ids = []
+        for it in uploaded:
+            if isinstance(it, dict):
+                uploaded_ids.append(it.get("id"))
+            else:
+                uploaded_ids.append(it)
+        has_identity = any(d in identity_group for d in uploaded_ids if d)
+        has_financial = any(d in financial_group for d in uploaded_ids if d)
         app.document_verified = bool(has_identity and has_financial)
         db.commit()
         
