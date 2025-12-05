@@ -1,4 +1,3 @@
-// src/App.js
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
@@ -30,32 +29,30 @@ function App() {
         {/* Landing Page */}
         <Route path="/" element={<Home />} />
 
-        {/* Apply for Loan (chat/voice/form) */}
+        {/* Application Page */}
         <Route path="/apply" element={<ApplyPage />} />
 
-        {/* Manager Login (User-facing login for applications) */}
+        {/* Public Login (Applicant Login) */}
         <Route path="/auth" element={<AuthPage />} />
 
-        {/* Dashboard Admin Login */}
+        {/* Admin Login */}
         <Route path="/login" element={<Login />} />
 
-        {/* Dashboard Pages */}
-        <Route path="/dashboard" element={<MainDashboard />} />
-        <Route path="/loan-analytics" element={<LoanAnalytics />} />
-        <Route path="/ml-performance" element={<MLPerformance />} />
-        <Route path="/voice-analytics" element={<VoiceAnalytics />} />
-        <Route path="/applications" element={<ApplicationsTable />} />
-        <Route path="/transcripts" element={<Transcripts />} />
-        <Route path="/settings" element={<SystemSettings />} />
-        <Route path="/overview" element={<ProjectOverview />} />
+        {/* DASHBOARD ROUTES */}
+        <Route path="/admin/dashboard" element={<MainDashboard />} />
+        <Route path="/admin/loan-analytics" element={<LoanAnalytics />} />
+        <Route path="/admin/ml-performance" element={<MLPerformance />} />
+        <Route path="/admin/voice-analytics" element={<VoiceAnalytics />} />
+        <Route path="/admin/applications" element={<ApplicationsTable />} />
+        <Route path="/admin/transcripts" element={<Transcripts />} />
+        <Route path="/admin/settings" element={<SystemSettings />} />
+        <Route path="/admin/overview" element={<ProjectOverview />} />
+        <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
 
-        {/* Loan Rejection Details */}
-        <Route path="/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
-
-        {/* Voice agent (if needed) */}
+        {/* Voice agent */}
         <Route path="/voice-agent" element={<VoiceAgentRealtime_v2 />} />
 
-        {/* Fallback */}
+        {/* 404 → redirect home */}
         <Route path="*" element={<Navigate to="/" />} />
 
       </Routes>
