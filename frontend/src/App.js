@@ -22,6 +22,21 @@ import Manager from "./pages/Manager";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
 import MiniChatbot from "./components/MiniChatbot";
 
+// Dashboard pages
+import Login from "./pages/Login";
+import MainDashboard from "./pages/MainDashboard";
+import LoanAnalytics from "./pages/LoanAnalytics";
+import MLPerformance from "./pages/MLPerformance";
+import VoiceAnalytics from "./pages/VoiceAnalytics";
+import ApplicationsTable from "./pages/ApplicationsTable";
+import Transcripts from "./pages/Transcripts";
+import SystemSettings from "./pages/SystemSettings";
+import ProjectOverview from "./pages/ProjectOverview";
+import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
+
+// Voice agent
+import VoiceAgentRealtime_v2 from "./components/VoiceAgentRealtime_v2";
+
 // Utils
 import { auth } from "./utils/auth";
 
@@ -79,7 +94,6 @@ export default function App() {
             }
           />
 
-
           <Route
             path="/verify"
             element={
@@ -107,7 +121,87 @@ export default function App() {
             }
           />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Dashboard Admin Login */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Dashboard Pages */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <MainDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/loan-analytics"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <LoanAnalytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ml-performance"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <MLPerformance />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/voice-analytics"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <VoiceAnalytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/applications"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <ApplicationsTable />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transcripts"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <Transcripts />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <SystemSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overview"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <ProjectOverview />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Loan Rejection Details */}
+          <Route
+            path="/loan-rejection/:userId"
+            element={
+              <ProtectedRoute>
+                <LoanRejectionDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Voice agent (if needed) */}
+          <Route path="/voice-agent" element={<VoiceAgentRealtime_v2 />} />
         </Routes>
 
         <ToastContainer position="top-right" autoClose={4000} />
