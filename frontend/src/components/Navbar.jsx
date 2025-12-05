@@ -11,257 +11,218 @@ import {
   LogOut,
   LogIn,
   Shield,
-  ChevronDown,
   User,
 } from "lucide-react";
 
-const Navbar = () => {
+/*
+  Redesigned NAVBAR
+  - Cleaner structure
+  - Modern layout
+  - Left Sidebar + Top Minimal Navbar Hybrid
+  - Works with MainLayout wrapper
+  - Fully responsive, animated, enterprise UI
+*/
+
+export default function Navbar() {
+  const userDropdownRef = React.useRef(null);
+  const userIconRef = React.useRef(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-
   const isAuthenticated = auth.isAuthenticated();
   const isManager = auth.isManager();
   const user = auth.getUser();
 
+  React.useEffect(() => {
+    if (!showUserDropdown) return;
+    function handleClickOutside(event) {
+      if (
+        userDropdownRef.current &&
+        !userDropdownRef.current.contains(event.target) &&
+        userIconRef.current &&
+        !userIconRef.current.contains(event.target)
+      ) {
+        setShowUserDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showUserDropdown]);
+
   const handleLogout = () => {
     auth.logout();
     navigate("/");
-    setIsMobileMenuOpen(false);
-    setIsProfileMenuOpen(false);
   };
 
-  const navigationItems = [
-    { name: "Home", href: "/", icon: Home, show: true },
+  const routes = [
+    { label: "Home", href: "/", icon: Home, show: true },
+    { label: "Apply", href: "/apply", icon: FileText, show: isAuthenticated },
     {
-      name: "Apply for Loan",
-      href: "/apply",
-      icon: FileText,
-      show: isAuthenticated,
-    },
-    {
-      name: "Manager Dashboard",
+      label: "Manager",
       href: "/manager",
       icon: BarChart3,
       show: isAuthenticated && isManager,
     },
+    { label: "Help", href: "/help", icon: Shield, show: true },
+    { label: "Contact Us", href: "/contact", icon: User, show: true },
   ];
 
-  const isActiveLink = (href) => {
-    return location.pathname === href;
-  };
+  const isActive = (path) => location.pathname === path;
 
   return (
-    <nav className="bg-white shadow-lg border-b border-gray-100 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          {/* Logo and Brand */}
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-3 group">
-              <div className="bg-gradient-to-r from-primary-600 to-secondary-600 p-2 rounded-lg group-hover:scale-105 transition-transform">
-                <Shield className="w-6 h-6 text-white" />
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-gray-900 group-hover:text-primary-600 transition-colors">
-                  AI Loan System
-                </h1>
-                <p className="text-xs text-gray-500">Powered by Intelligence</p>
-              </div>
-            </Link>
-          </div>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-1">
-            {navigationItems
-              .filter((item) => item.show)
-              .map((item) => (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`relative px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2 ${
-                    isActiveLink(item.href)
-                      ? "text-primary-600 bg-primary-50"
-                      : "text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  <span>{item.name}</span>
-                  {isActiveLink(item.href) && (
-                    <motion.div
-                      layoutId="navbar-indicator"
-                      className="absolute inset-0 bg-primary-50 rounded-lg -z-10"
-                      transition={{
-                        type: "spring",
-                        stiffness: 380,
-                        damping: 30,
-                      }}
-                    />
-                  )}
-                </Link>
-              ))}
-          </div>
-
-          {/* User Menu */}
-          <div className="flex items-center space-x-4">
-            {isAuthenticated ? (
-              <div className="relative">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="flex items-center space-x-2 bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
-                >
-                  <div className="w-8 h-8 bg-gradient-to-r from-primary-600 to-secondary-600 rounded-full flex items-center justify-center">
-                    <User className="w-4 h-4 text-white" />
-                  </div>
-                  <div className="hidden sm:block text-left">
-                    <p className="text-sm font-medium text-gray-900">
-                      {user?.full_name || "User"}
-                    </p>
-                    <p className="text-xs text-gray-500 capitalize">
-                      {user?.role || "User"}
-                    </p>
-                  </div>
-                  <ChevronDown
-                    className={`w-4 h-4 text-gray-500 transition-transform ${
-                      isProfileMenuOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </motion.button>
-
-                {/* Profile Dropdown */}
-                <AnimatePresence>
-                  {isProfileMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                      transition={{ duration: 0.2 }}
-                      className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50"
-                    >
-                      <div className="px-4 py-2 border-b border-gray-100">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {user?.full_name}
-                        </p>
-                        <p className="text-xs text-gray-500 break-all">
-                          {user?.email}
-                        </p>
-                      </div>
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            ) : (
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Link
-                  to="/auth"
-                  className="bg-gradient-to-r from-primary-600 to-secondary-600 text-white px-4 py-2 rounded-lg font-medium hover:shadow-lg transition-all duration-200 flex items-center space-x-2"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>Sign In</span>
-                </Link>
-              </motion.div>
-            )}
-
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="bg-gray-50 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-              >
-                {isMobileMenuOpen ? (
-                  <X className="w-6 h-6 text-gray-600" />
-                ) : (
-                  <Menu className="w-6 h-6 text-gray-600" />
-                )}
-              </motion.button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Navigation Menu */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            className="md:hidden bg-white border-t border-gray-100"
+    <>
+      {/* Top Navbar */}
+      <header className="h-16 border-b bg-white flex items-center justify-between px-4 sticky top-0 z-40 shadow-sm">
+        {/* Left section */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="md:hidden p-2 rounded-lg hover:bg-gray-100"
           >
-            <div className="px-4 py-4 space-y-2">
-              {navigationItems
-                .filter((item) => item.show)
-                .map((item, index) => (
-                  <motion.div
-                    key={item.name}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                  >
-                    <Link
-                      to={item.href}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={`flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-all ${
-                        isActiveLink(item.href)
-                          ? "text-primary-600 bg-primary-50 border border-primary-200"
-                          : "text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      <item.icon className="w-5 h-5" />
-                      <span>{item.name}</span>
-                    </Link>
-                  </motion.div>
-                ))}
+            <Menu className="w-6 h-6" />
+          </button>
 
-              {!isAuthenticated && (
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
+          <Link to="/" className="flex items-center gap-2">
+            <div className="bg-indigo-600 p-2 rounded-xl shadow text-white">
+              <Shield className="w-6 h-6" />
+            </div>
+            <span className="font-semibold hidden sm:block text-gray-900 text-lg">
+              AI Loan System
+            </span>
+          </Link>
+        </div>
+
+        {/* Right section */}
+        <div className="flex items-center gap-4">
+          {/* User Dropdown */}
+          {isAuthenticated ? (
+            <div className="relative">
+              <button
+                ref={userIconRef}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm focus:outline-none"
+                onClick={() => setShowUserDropdown((v) => !v)}
+              >
+                <User className="w-6 h-6 text-indigo-700" />
+              </button>
+              <AnimatePresence>
+                {showUserDropdown && (
+                  <motion.div
+                    ref={userDropdownRef}
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4"
+                  >
+                    <div className="mb-3 flex items-center gap-2">
+                      <User className="w-8 h-8 text-indigo-700" />
+                      <div>
+                        <div className="font-semibold text-gray-900">{user?.full_name || user?.name || "User"}</div>
+                        <div className="text-xs text-gray-500">{user?.email || "No email"}</div>
+                      </div>
+                    </div>
+                    <Link
+                      to="/help"
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold mb-1"
+                    >
+                      <Shield className="w-4 h-4 text-indigo-700" /> Help
+                    </Link>
+                    <Link
+                      to="/contact"
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold mb-1"
+                    >
+                      <User className="w-4 h-4 text-indigo-700" /> Contact Us
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm mt-2 font-semibold"
+                    >
+                      <LogOut className="w-4 h-4 text-red-700" /> Logout
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <Link
+              to="/auth"
+              className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+            >
+              <LogIn className="w-4 h-4 inline-block mr-1" /> Login
+            </Link>
+          )}
+        </div>
+      </header>
+
+      {/* Sidebar */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black z-40 md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+
+            {/* Drawer */}
+            <motion.aside
+              initial={{ x: -250 }}
+              animate={{ x: 0 }}
+              exit={{ x: -250 }}
+              transition={{ type: "spring", stiffness: 260, damping: 30 }}
+              className="fixed left-0 top-0 h-full w-64 bg-white z-50 shadow-xl p-4 flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-semibold">Menu</h2>
+                <button onClick={() => setIsSidebarOpen(false)}>
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <nav className="space-y-1">
+                {routes
+                  .filter((r) => r.show)
+                  .map((item) => (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={() => setIsSidebarOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${{
+                        true: "bg-indigo-50 text-indigo-700",
+                        false: "hover:bg-gray-100",
+                      }[isActive(item.href)]}`}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.label}
+                    </Link>
+                  ))}
+              </nav>
+
+              <div className="mt-auto pt-4 border-t">
+                {isAuthenticated ? (
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <LogOut className="w-4 h-4" /> Logout
+                  </button>
+                ) : (
                   <Link
                     to="/auth"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-primary-600 hover:bg-primary-50 transition-colors"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="w-full block px-3 py-2 rounded-lg bg-indigo-600 text-white text-center text-sm"
                   >
-                    <LogIn className="w-5 h-5" />
-                    <span>Sign In</span>
+                    Login
                   </Link>
-                </motion.div>
-              )}
-            </div>
-          </motion.div>
+                )}
+              </div>
+            </motion.aside>
+          </>
         )}
       </AnimatePresence>
-
-      {/* Mobile Menu Overlay */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-25 md:hidden z-40"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-    </nav>
+    </>
   );
-};
-
-export default Navbar;
+}

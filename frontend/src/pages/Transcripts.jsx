@@ -1,39 +1,28 @@
 // src/pages/Transcripts.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 
 function Transcripts() {
-  // Sample transcript data (later connect to backend)
-  const transcripts = [
-    {
-      id: "CALL1021",
-      user: "What is the interest rate?",
-      ai: "Current loan interest rate starts from 10.5%.",
-      extracted: "{ 'query': 'interest_rate' }",
-      time: "2025-01-14 10:32 AM",
-    },
-    {
-      id: "CALL1022",
-      user: "Am I eligible for 5 lakh loan?",
-      ai: "Based on your credit score, you are likely eligible.",
-      extracted: "{ 'loan_amount': '500000' }",
-      time: "2025-01-14 10:45 AM",
-    },
-    {
-      id: "CALL1023",
-      user: "What documents do I need?",
-      ai: "You need ID proof, address proof, and bank statements.",
-      extracted: "{ 'query': 'documents' }",
-      time: "2025-01-14 11:02 AM",
-    },
-    {
-      id: "CALL1024",
-      user: "What is my eligibility?",
-      ai: "You are eligible for a maximum of ₹2,40,000.",
-      extracted: "{ 'eligibility': '240000' }",
-      time: "2025-01-14 11:20 AM",
-    },
-  ];
+  const [transcripts, setTranscripts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchTranscripts() {
+      try {
+        const res = await fetch("/api/transcripts"); // <-- your backend endpoint
+        const data = await res.json();
+        setTranscripts(data);
+      } catch (err) {
+        console.error("Error fetching transcripts:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchTranscripts();
+  }, []);
+
+  if (loading) return <AdminLayout><p className="text-slate-300">Loading transcripts...</p></AdminLayout>;
 
   return (
     <AdminLayout>
@@ -53,10 +42,7 @@ function Transcripts() {
 
           <tbody>
             {transcripts.map((t, index) => (
-              <tr
-                key={index}
-                className="border-b border-slate-700 hover:bg-slate-700/40"
-              >
+              <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/40">
                 <td className="py-3 px-2">{t.id}</td>
                 <td className="py-3 px-2 text-slate-200">{t.user}</td>
                 <td className="py-3 px-2 text-blue-300">{t.ai}</td>

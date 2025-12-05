@@ -390,7 +390,7 @@ const LoanResultCard = ({
             <div className="bg-secondary-100 p-2 rounded-lg">
               <CreditCard className="w-5 h-5 text-secondary-600" />
             </div>
-            <h4 className="text-lg font-semibold text-gray-900">
+            <h4 className="text-lg font-semibold text-primary-600">
               Application Summary
             </h4>
           </div>
@@ -434,7 +434,7 @@ const LoanResultCard = ({
 
             {extractedData && (
               <div>
-                <h5 className="font-medium text-gray-900 mb-3">
+                <h5 className="font-medium text-secondary-600 mb-3">
                   Document Verification
                 </h5>
                 <div className="space-y-2 text-sm">
@@ -492,7 +492,7 @@ const LoanResultCard = ({
         {(analysis || analysisError) && (
           <div className="card mb-6 text-left max-h-[35vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold">AI Analysis</h4>
+              <h4 className="text-lg font-semibold text-primary-600">AI Analysis</h4>
               {analysisError && (
                 <button
                   className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
@@ -519,8 +519,17 @@ const LoanResultCard = ({
               )}
             </div>
             {analysis && (
-              <div className="prose max-w-none whitespace-pre-wrap text-gray-800 text-sm">
-                {analysis}
+              <div className="prose max-w-none whitespace-pre-wrap text-blue-700 text-sm">
+                {/* Highlight 'Let's start with the basics. Here's the first question:' and 'What is your full name?' if present */}
+                {analysis.split('\n').map((line, idx) => {
+                  if (line.includes("Let's start with the basics")) {
+                    return <span key={idx} className="text-primary-600 font-semibold">{line}</span>;
+                  }
+                  if (line.includes("What is your full name?")) {
+                    return <span key={idx} className="text-secondary-600 font-semibold">{line}</span>;
+                  }
+                  return <span key={idx}>{line}</span>;
+                })}
               </div>
             )}
             {analysisError && (

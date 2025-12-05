@@ -79,7 +79,7 @@ async def generate_report(
         try:
             report_path = report_service.generate_report(app_data)
         except RuntimeError as e:
-            # Surface PDF generation errors (e.g., WeasyPrint missing or conversion failed)
+            # Surface PDF generation errors (e.g., PDF library missing or conversion failed)
             logger.error(f"PDF generation failed for application {application_id}: {e}")
             raise HTTPException(
                 status_code=500,

@@ -66,7 +66,7 @@ export const ocrAPI = {
   uploadDocument: (file) => {
     const formData = new FormData();
     formData.append("file", file);
-    return api.post(`/verify/document`, formData, {
+    return api.post(`/ocr/document`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
@@ -79,8 +79,10 @@ export const ocrAPI = {
     });
   },
 
-  checkStatus: () => api.get("/verify/status"),
+
+  checkStatus: () => api.get("/ocr/status"),
 };
+
 
 export const loanAPI = {
   predictEligibility: (applicantData) =>
@@ -155,3 +157,5 @@ export const managerAPI = {
 };
 
 export default api;
+
+

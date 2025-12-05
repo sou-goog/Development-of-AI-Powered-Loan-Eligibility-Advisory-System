@@ -1,38 +1,34 @@
 // src/pages/LoanRejectionDashboard.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
+import { loanAPI } from "../utils/api";
 
-function LoanRejectionDashboard() {
-  // Dummy data for now
-  const applicantName = "Ravi Kumar";
-  const applicationId = "APP-23918";
-  const loanAmount = "₹5,00,000";
-  const loanType = "Personal Loan";
+function LoanRejectionDashboard({ applicationId }) {
+  const [application, setApplication] = useState(null);
 
-  const rejectionReason = "Low Credit Score";
-  const detailedReason =
-    "Your current credit score is below the required threshold.";
-
-  const metrics = [
-    { label: "Your Credit Score", value: "580 / 900" },
-    { label: "Required Score", value: "700 / 900" },
-    { label: "Monthly Income", value: "₹28,000" },
-    { label: "Required Income", value: "₹35,000" },
-    { label: "Existing EMIs", value: "₹12,000" },
-    { label: "Allowed EMI Limit", value: "₹10,000" },
-  ];
-
-  const suggestions = [
-    "Pay bills on time for 6 months.",
-    "Keep credit card usage below 30%.",
-    "Avoid taking new loans.",
-    "Update income proof before re-applying.",
-  ];
+  useEffect(() => {
+    // Fetch application details from API
+    loanAPI.getApplication(applicationId).then((res) => {
+      setApplication(res.data);
+    });
+  }, [applicationId]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     alert("Sharable link copied!");
   };
+
+  if (!application) return <AdminLayout>Loading...</AdminLayout>;
+
+  const {
+    applicantName,
+    loanAmount,
+    loanType,
+    rejectionReason,
+    detailedReason,
+    metrics,
+    suggestions,
+  } = application;
 
   return (
     <AdminLayout>

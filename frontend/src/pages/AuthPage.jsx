@@ -4,15 +4,49 @@ import { motion } from "framer-motion";
 import { authAPI } from "../utils/api";
 import { auth } from "../utils/auth";
 import { toast } from "react-toastify";
-import {
-  Eye,
-  EyeOff,
-  Mail,
-  Lock,
-  User,
-  ArrowRight,
-  Shield,
-} from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Shield } from "lucide-react";
+
+export default function AuthPage() {
+  const [isLogin, setIsLogin] = useState(true);
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-100/80 via-white to-secondary-100/80 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8 }}
+        className="glass rounded-3xl shadow-2xl p-10 w-full max-w-md border border-white/30 backdrop-blur-xl"
+      >
+        <div className="text-center mb-8">
+          <Shield className="mx-auto w-12 h-12 text-primary-600 mb-2" />
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2">
+            {isLogin ? "Sign In to AI Loan System" : "Sign Up for AI Loan System"}
+          </h1>
+          <p className="text-gray-500 dark:text-gray-300">Secure, fast, and beautiful authentication experience.</p>
+        </div>
+        {isLogin ? (
+          <LoginForm onSwitchToSignup={() => setIsLogin(false)} />
+        ) : (
+          <SignupForm onSwitchToLogin={() => setIsLogin(true)} />
+        )}
+        <div className="mt-6 text-center">
+          {isLogin ? (
+            <span className="text-gray-600 dark:text-gray-300">Don't have an account?{' '}
+              <button className="text-primary-600 hover:underline font-semibold" onClick={() => setIsLogin(false)}>
+                Sign up
+              </button>
+            </span>
+          ) : (
+            <span className="text-gray-600 dark:text-gray-300">Already have an account?{' '}
+              <button className="text-primary-600 hover:underline font-semibold" onClick={() => setIsLogin(true)}>
+                Sign in
+              </button>
+            </span>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 // Segmented OTP input component (6 digits)
 const OTPInput = ({ value, onChange }) => {
@@ -77,13 +111,16 @@ const LoginForm = ({ onSwitchToSignup }) => {
   const [loginPayload, setLoginPayload] = useState(null); // holds token+user until OTP verified
   const [remember, setRemember] = useState(true);
   const navigate = useNavigate();
+  // NEW: login role selector
+  const [selectedRole, setSelectedRole] = useState("applicant");
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const response = await authAPI.login(formData.email, formData.password);
+      const response = await authAPI.login(formData.email, formData.password, selectedRole);
       const { access_token, token, user } = response.data || {};
       const finalToken = access_token || token;
       if (!finalToken || !user)
@@ -94,7 +131,7 @@ const LoginForm = ({ onSwitchToSignup }) => {
         auth.setToken(finalToken, remember);
         auth.setUser(user, remember);
         toast.success("Login successful!");
-        navigate(user.role === "manager" ? "/manager" : "/apply");
+        navigate(user.role === "manager" ? "/manager" : "/");
         return;
       }
 
@@ -286,6 +323,19 @@ const LoginForm = ({ onSwitchToSignup }) => {
             )}
           </button>
         </div>
+      </div>
+
+      {/* Role Selector */}
+      <div className="space-y-2">
+        <label className="block text-sm font-semibold text-gray-700">Login as</label>
+        <select
+          value={selectedRole}
+          onChange={e => setSelectedRole(e.target.value)}
+          className="input-field w-full"
+        >
+          <option value="applicant">Applicant</option>
+          <option value="manager">Manager</option>
+        </select>
       </div>
 
       <div className="flex items-center justify-between">
@@ -626,62 +676,4 @@ const SignupForm = ({ onSwitchToLogin }) => {
   );
 };
 
-const AuthPage = () => {
-  const [isLogin, setIsLogin] = useState(true);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <div className="mx-auto h-16 w-16 bg-gradient-to-r from-primary-600 to-secondary-600 rounded-2xl flex items-center justify-center shadow-lg">
-            <Shield className="h-8 w-8 text-white" />
-          </div>
-          <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            {isLogin ? "Welcome back" : "Join our platform"}
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            {isLogin
-              ? "Sign in to access your AI-powered loan assistant"
-              : "Create your account to start your loan journey"}
-          </p>
-        </motion.div>
-
-        {/* Form Container */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="card"
-        >
-          <div className="px-8 py-6">
-            {isLogin ? (
-              <LoginForm onSwitchToSignup={() => setIsLogin(false)} />
-            ) : (
-              <SignupForm onSwitchToLogin={() => setIsLogin(true)} />
-            )}
-          </div>
-        </motion.div>
-
-        {/* Footer */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="text-center"
-        >
-          <p className="text-xs text-gray-500">
-            Secured with enterprise-grade encryption
-          </p>
-        </motion.div>
-      </div>
-    </div>
-  );
-};
-
-export default AuthPage;
