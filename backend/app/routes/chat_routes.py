@@ -46,12 +46,207 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
         except Exception:
             pass
 
-        # Get or create application context
+
+
+        # --- USER EXISTENCE CHECK ---
         application = None
+        user = None
+        # Check for Application ID first (Existing User workflow)
         if request.application_id:
-            application = db.query(LoanApplication).filter(
-                LoanApplication.id == request.application_id
-            ).first()
+            application = db.query(LoanApplication).filter(LoanApplication.id == request.application_id).first()
+            if application:
+                prev_info = {
+                    "full_name": application.full_name,
+                    "email": application.email,
+                    "phone": application.phone,
+                    "annual_income": application.annual_income,
+                    "credit_score": application.credit_score,
+                    "loan_amount": application.loan_amount,
+                    "loan_term_months": application.loan_term_months,
+                    "num_dependents": application.num_dependents,
+                    "employment_status": application.employment_status
+                }
+                ai_response = (
+                    f"Here is your saved application information:\n"
+                    f"Name: {application.full_name}\nEmail: {application.email}\nPhone: {application.phone}\n"
+                    f"Annual Income: ₹{application.annual_income:,}\nCredit Score: {application.credit_score}\nLoan Amount: ₹{application.loan_amount:,}\n"
+                    f"Loan Term: {application.loan_term_months} months\nDependents: {application.num_dependents}\nEmployment Status: {application.employment_status}\n"
+                    "\nDo you want to continue with the same information or update it? (Reply 'Continue' or 'Update')"
+                )
+                if request.message.strip().lower() == "continue":
+                    ai_response = "Please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."
+                    return {
+                        "message": ai_response,
+                        "action": "show_upload_buttons",
+                        "application_id": application.id,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info
+                    }
+                elif request.message.strip().lower() == "update":
+                    application = None  # Restart form questions
+                else:
+                    return {
+                        "message": ai_response,
+                        "application_id": application.id,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info
+                    }
+        # If no Application ID, check for user by full name (Existing User workflow)
+        elif request.message and request.message.strip():
+            name_query = request.message.strip()
+            # FIX 3: Detect if user typed an Application ID instead of a name
+            appid_match = re.fullmatch(r"(?:APP[-_])?(\d{4,12})", name_query, re.IGNORECASE)
+            if appid_match:
+                app_id_val = int(appid_match.group(1))
+                application = db.query(LoanApplication).filter(LoanApplication.id == app_id_val).first()
+                if application:
+                    request.application_id = app_id_val
+                    prev_info = {
+                        "full_name": application.full_name,
+                        "email": application.email,
+                        "phone": application.phone,
+                        "annual_income": application.annual_income,
+                        "credit_score": application.credit_score,
+                        "loan_amount": application.loan_amount,
+                        "loan_term_months": application.loan_term_months,
+                        "num_dependents": application.num_dependents,
+                        "employment_status": application.employment_status
+                    }
+                    return {
+                        "message": f"Here are your saved details for Application ID {app_id_val}. Do you want to continue or update?",
+                        "application_id": app_id_val,
+                        "collected_fields": list(prev_info.keys()),
+                        "collected_values": prev_info,
+                        "ask_continue_or_update": True
+                    }
+
+            # FIX 2: Robust name search
+            clean = name_query.strip()
+            if len(clean) >= 3:
+                found_app = (
+                    db.query(LoanApplication)
+                    .filter(LoanApplication.full_name.ilike(f"%{clean}%"))
+                    .order_by(LoanApplication.created_at.desc())
+                    .first()
+                )
+            else:
+                found_app = None
+            if found_app:
+                # Found user by name, ask for Application ID (only greet once)
+                return {
+                    "message": f"Welcome back, {name_query}! Please enter your Application ID to continue.",
+                    "action": "ask_application_id"
+                }
+            else:
+                # Step-by-step form flow: track answers across chat session history
+                import re
+                session_fields = [
+                    ("full_name", "What's your full name?"),
+                    ("email", "What's your email address?"),
+                    ("phone", "What's your phone number?"),
+                    ("annual_income", "What's your annual income (in INR)?"),
+                    ("loan_amount", "What loan amount are you looking for (INR)?"),
+                    ("loan_term_months", "What loan term do you want (in months)?"),
+                    ("loan_purpose", "What is the purpose of your loan? (e.g., home, car, education, business, personal)"),
+                    ("num_dependents", "How many dependents do you have?"),
+                    ("employment_status", "What's your employment status? (salaried, self-employed, business)"),
+                    ("credit_score", "What's your current credit score?"),
+                ]
+
+                email_regex = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+                phone_regex = r"^(\d{10})$"
+                income_regex = r"^\d{4,9}$"
+                credit_regex = r"^\d{3}$"
+                loan_regex = r"^loan[:\s]*(\d{4,9})$"
+                term_regex = r"^term[:\s]*(\d{1,3})$"
+                dep_regex = r"^\d{1,2}$"
+                emp_regex = r"^(salaried|self-employed|business)$"
+
+                # FIX 1: Scoped chat history (per application or user)
+                collected = {}
+                if request.application_id:
+                    chat_history = (
+                        db.query(ChatSession)
+                        .filter(ChatSession.application_id == request.application_id)
+                        .order_by(ChatSession.created_at.desc())
+                        .limit(50)
+                        .all()
+                    )
+                elif user_id:
+                    chat_history = (
+                        db.query(ChatSession)
+                        .filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+                        .order_by(ChatSession.created_at.desc())
+                        .limit(50)
+                        .all()
+                    )
+                else:
+                    chat_history = []
+
+                all_user_messages = []
+                for session in reversed(chat_history):
+                    try:
+                        messages = json.loads(session.messages or "[]")
+                        for m in messages:
+                            if m.get("role") == "user" and "content" in m:
+                                all_user_messages.append(m["content"])
+                    except:
+                        pass
+                # Always include the current user message as the last one
+                all_user_messages.append(name_query)
+                for val in all_user_messages:
+                    extracted = _extract_data_from_message(val)
+                    for k, v in extracted.items():
+                        if k not in collected or collected[k] != v:
+                            collected[k] = v
+
+                # Ask only the next missing field
+                for key, question in session_fields:
+                    if key not in collected or not collected[key]:
+                        # Persist this turn so future requests can reconstruct session state
+                        try:
+                            chat_session = ChatSession(
+                                user_id=user_id,
+                                application_id=request.application_id,
+                                messages=json.dumps([
+                                    {"role": "user", "content": request.message},
+                                    {"role": "assistant", "content": question}
+                                ]),
+                                meta={"collected_values": collected} if collected else None
+                            )
+                            db.add(chat_session)
+                            db.commit()
+                        except Exception:
+                            logger.debug("Failed to persist interim chat session; continuing")
+                        return {
+                            "message": question,
+                            "action": f"ask_{key}",
+                            "collected_fields": list(collected.keys()) if collected else [],
+                            "collected_values": collected if collected else {}
+                        }
+                # If all fields are collected, prompt for document upload
+                try:
+                    chat_session = ChatSession(
+                        user_id=user_id,
+                        application_id=request.application_id,
+                        messages=json.dumps([
+                            {"role": "user", "content": request.message},
+                            {"role": "assistant", "content": "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."}
+                        ]),
+                        meta={"collected_values": collected} if collected else None
+                    )
+                    db.add(chat_session)
+                    db.commit()
+                except Exception:
+                    logger.debug("Failed to persist interim complete-session; continuing")
+                return {
+                    "message": "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip.",
+                    "action": "show_upload_buttons",
+                    "collected_fields": list(collected.keys()) if collected else [],
+                    "collected_values": collected if collected else {}
+                }
+        # If neither Application ID nor name found, start New User workflow
+        # ...existing code for conversation analysis and question flow...
 
         # Analyze user message and determine next steps
         conversation_context = _analyze_conversation(request.message, application, db=db, user_id=user_id)
@@ -59,13 +254,27 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
         # Choose provider per request if provided; else fall back to default
         svc = get_llm_service(provider_override=request.provider) if request.provider else llm_service
 
-        # Generate AI response based on conversation context
-        ai_response = _generate_conversational_response(request.message, conversation_context, application, svc)
+        # Generate AI response based on conversation context (include DB/user for multi-turn history)
+        ai_response = _generate_conversational_response(request.message, conversation_context, application, svc, db=db, user_id=user_id)
+
 
         # Handle specific actions based on conversation context
         action_result = None
         if conversation_context.get("action") == "collect_details":
             action_result = await _collect_applicant_details(request.message, application, db, user_id)
+            # If all required fields are collected, save as new application and show document upload prompt
+            if action_result and action_result.get("application_created") and application is None:
+                # Find latest application for user
+                latest_app = db.query(LoanApplication).filter(LoanApplication.user_id == user_id).order_by(LoanApplication.created_at.desc()).first()
+                if latest_app:
+                    ai_response = "Now please upload your Aadhaar Card, PAN Card, KYC documents, last 6-month bank statement, and your salary slip."
+                    return {
+                        "message": ai_response,
+                        "action": "show_upload_buttons",
+                        "application_id": latest_app.id,
+                        "collected_fields": action_result.get("collected_fields", []),
+                        "collected_values": action_result.get("collected_values", {})
+                    }
         elif conversation_context.get("action") == "predict_eligibility":
             action_result = await _perform_eligibility_check(application, db)
         elif conversation_context.get("action") == "generate_report":
@@ -179,6 +388,111 @@ async def send_message(request: ChatRequest, http_req: Request, db: Session = De
             status_code=500,
             detail="Failed to process message"
         )
+
+
+@router.post("/open", response_model=ChatResponse)
+async def open_chat(request: ChatRequest, http_req: Request, db: Session = Depends(get_db)):
+    """
+    Open-ended chat endpoint: accept any question and let the LLM respond freely.
+
+    The assistant is encouraged to ask clarifying follow-up questions when helpful.
+    This endpoint does not trigger application-specific actions; it's for general Q&A and follow-ups.
+    """
+    try:
+        svc = get_llm_service(provider_override=request.provider) if request.provider else llm_service
+
+        # Identify current user (optional) for open chat history
+        user_id = None
+        try:
+            auth = http_req.headers.get("authorization") or http_req.headers.get("Authorization")
+            if auth and auth.lower().startswith("bearer "):
+                token = auth.split(" ", 1)[1].strip()
+                decoded = decode_token(token)
+                if decoded and decoded.get("email"):
+                    user = db.query(User).filter(User.email == decoded["email"]).first()
+                    if user:
+                        user_id = user.id
+        except Exception:
+            pass
+
+        # Construct an explicit system prompt that encourages the assistant to ask clarifying
+        # questions and interact with the user conversationally.
+        system_prompt = (
+            "You are a helpful, concise AI assistant. Answer the user's question clearly. "
+            "If the user's question lacks necessary details, ask one concise clarifying question. "
+            "Do not take actions on behalf of the user; simply ask or answer. Keep replies friendly and short."
+        )
+
+        # Pass lightweight application context only if provided
+        context_data = None
+        if request.application_id:
+            application = db.query(LoanApplication).filter(LoanApplication.id == request.application_id).first()
+            if application:
+                context_data = {
+                    "full_name": application.full_name,
+                    "loan_amount": application.loan_amount,
+                    "status": application.approval_status,
+                }
+
+        # Use the LLM service to generate response using system prompt + user message
+        if not svc.health():
+            # If LLM unhealthy, return fallback
+            reply = "Sorry, the AI service is currently unavailable. Please try again later."
+        else:
+            # Attempt to include system prompt if the provider supports it
+            # Include recent conversation history as part of context when available
+            history = []
+            try:
+                if db is not None:
+                    history = _get_conversation_history(db, application, user_id, limit=8)
+            except Exception:
+                history = []
+
+            merged_context = (context_data or {}).copy() if context_data else {}
+            if history:
+                merged_context["history"] = history
+
+            try:
+                # Some services accept (prompt, context) shapes; the service implementations handle it
+                reply = svc.generate(request.message, context=merged_context or {}, system_prompt=system_prompt)
+            except TypeError:
+                # Fallback for services that don't support system_prompt parameter
+                combined = f"{system_prompt}\n\nUser: {request.message}"
+                reply = svc.generate(combined, context=merged_context or {})
+
+        # Heuristic: if reply ends with a question mark or contains a short question, mark ask_followup
+        ask_followup = False
+        try:
+            clean = (reply or "").strip()
+            if clean.endswith("?") or "?" in clean.splitlines()[:2]:
+                ask_followup = True
+        except Exception:
+            ask_followup = False
+
+        # Persist chat session minimally for history
+        try:
+            chat_session = ChatSession(
+                user_id=user_id,
+                application_id=request.application_id,
+                messages=json.dumps([
+                    {"role": "user", "content": request.message},
+                    {"role": "assistant", "content": reply}
+                ])
+            )
+            db.add(chat_session)
+            db.commit()
+        except Exception:
+            logger.debug("Failed to persist open chat session; continuing")
+
+        return {
+            "message": reply,
+            "application_id": request.application_id,
+            "ask_followup": ask_followup,
+        }
+
+    except Exception as e:
+        logger.error(f"Open chat error: {e}")
+        raise HTTPException(status_code=500, detail="Open chat failed")
 
 
 @router.get("/health")
@@ -432,7 +746,46 @@ def _get_last_assistant_question_key(db: Session, application, user_id: int | No
     return ""
 
 
-def _generate_conversational_response(message: str, context: dict, application, svc) -> str:
+def _get_conversation_history(db: Session, application, user_id: int | None, limit: int = 6) -> list:
+    """Return the last `limit` messages (role/content) for this application or user.
+
+    Messages are returned in chronological order (oldest first).
+    """
+    history = []
+    try:
+        q = db.query(ChatSession)
+        if application and getattr(application, 'id', None):
+            q = q.filter(ChatSession.application_id == application.id)
+        elif user_id:
+            q = q.filter(ChatSession.user_id == user_id, ChatSession.application_id == None)  # noqa: E711
+        else:
+            return []
+
+        sessions = q.order_by(ChatSession.created_at.desc()).limit(10).all()
+        # Collect messages from most recent sessions, then take last `limit` messages overall
+        msgs = []
+        for s in sessions:
+            try:
+                mlist = json.loads(s.messages) if isinstance(s.messages, str) else (s.messages or [])
+                for m in mlist:
+                    if isinstance(m, dict) and m.get('role') and m.get('content'):
+                        msgs.append({'role': m['role'], 'content': m['content']})
+            except Exception:
+                continue
+
+        # msgs currently newest-first across sessions; reverse to chronological
+        msgs = list(reversed(msgs))
+        # Return the last `limit` messages
+        if len(msgs) <= limit:
+            history = msgs
+        else:
+            history = msgs[-limit:]
+    except Exception:
+        return []
+    return history
+
+
+def _generate_conversational_response(message: str, context: dict, application, svc, db: Session = None, user_id: int | None = None) -> str:
     """
     Generate a conversational AI response based on context
     """
@@ -444,86 +797,63 @@ def _generate_conversational_response(message: str, context: dict, application, 
 
     elif intent == "providing_info":
         collected_data = context.get("collected_data", {})
-        if collected_data:
-            # Acknowledge what they shared
-            data_summary = []
-            for k, v in collected_data.items():
-                # Skip placeholder booleans like True (used to avoid re-asking)
-                if isinstance(v, bool):
-                    continue
-                if k == "annual_income":
-                    data_summary.append(f"annual income of ₹{v:,}")
-                elif k == "loan_amount":
-                    data_summary.append(f"loan amount of ₹{v:,}")
-                elif k == "credit_score":
-                    data_summary.append(f"credit score of {v}")
-                elif k == "employment_status":
-                    data_summary.append(f"employment as {v}")
-                elif k == "num_dependents":
-                    data_summary.append(f"{v} dependent{'s' if v != 1 else ''}")
-                else:
-                    data_summary.append(f"{k}: {v}")
-            
-            if data_summary:
-                response = f"Thank you for sharing that information. I've noted your {', '.join(data_summary)}. "
+        # Acknowledge what was shared
+        data_summary = []
+        for k, v in collected_data.items():
+            if isinstance(v, bool):
+                continue
+            if k == "annual_income":
+                data_summary.append(f"annual income of ₹{v:,}")
+            elif k == "loan_amount":
+                data_summary.append(f"loan amount of ₹{v:,}")
+            elif k == "credit_score":
+                data_summary.append(f"credit score of {v}")
+            elif k == "employment_status":
+                data_summary.append(f"employment as {v}")
+            elif k == "num_dependents":
+                data_summary.append(f"{v} dependent{'s' if v != 1 else ''}")
             else:
-                response = "Thank you for sharing that information. "
-            
-            if application:
-                missing = context.get("missing_fields", [])
-                if missing:
-                    # Guide them to next step conversationally
-                    next_field = missing[0]
-                    key_map = {
-                        "annual income": "annual_income",
-                        "credit score": "credit_score",
-                        "loan amount": "loan_amount",
-                        "number of dependents": "num_dependents",
-                        "employment status": "employment_status",
-                    }
-                    context["next_question_key"] = key_map.get(next_field, next_field)
-                    if next_field == "annual income":
-                        response += "To help determine the right loan amount for you, could you tell me your annual income?"
-                    elif next_field == "credit score":
-                        response += "Your credit score helps us understand your eligibility better. What's your current credit score?"
-                    elif next_field == "loan amount":
-                        response += "What loan amount are you looking to apply for?"
-                    elif next_field == "number of dependents":
-                        response += "How many dependents do you have? This helps us assess your financial situation."
-                    elif next_field == "employment status":
-                        response += "What's your current employment status? Are you salaried, self-employed, or in business?"
-                    else:
-                        response += f"To continue with your application, I need your {next_field}. Could you please share that?"
-                else:
-                    # All info collected - guide to next step
-                    response += "Perfect! I have all the key information I need. Let me run a quick eligibility check to see what loan options might be available for you. This will just take a moment..."
-                    # Auto-trigger eligibility check
-                    context["action"] = "predict_eligibility"
-            else:
-                # No application yet. Guide to the next field based on what was just provided.
-                collected = context.get("collected_data", {}) or {}
-                if "email" in collected and "full_name" not in collected:
-                    # User gave email now; don't re-ask name, move forward
-                    response += "Thanks! I’ve noted your email. Could you share your annual income (in INR)?"
-                    context["next_question_key"] = "annual_income"
-                else:
-                    # Ask for the next most helpful field
-                    order = [
-                        ("full_name", "What's your full name?"),
-                        ("email", "What's your email address?"),
-                        ("annual_income", "What's your annual income (in INR)?"),
-                        ("credit_score", "What's your current credit score?"),
-                        ("loan_amount", "What loan amount are you looking for (INR)?"),
-                        ("employment_status", "What's your employment status (salaried, self-employed, business)?"),
-                        ("num_dependents", "How many dependents do you have?"),
-                    ]
-                    for key, question in order:
-                        if key not in collected or not collected.get(key):
-                            response += f" {question}"
-                            context["next_question_key"] = key
-                            break
+                data_summary.append(f"{k}: {v}")
+        if data_summary:
+            response = f"Thank you for sharing that information. I've noted your {', '.join(data_summary)}. "
         else:
-            response = "I understand you're sharing some information. Could you please be more specific about what details you'd like to provide?"
+            response = "Thank you for sharing that information. "
+
+        # Always ask for the next missing field, one by one
+        required_order = [
+            ("full_name", "What's your full name?"),
+            ("email", "What's your email address?"),
+            ("annual_income", "What's your annual income (in INR)?"),
+            ("credit_score", "What's your current credit score?"),
+            ("loan_amount", "What loan amount are you looking for (INR)?"),
+            ("employment_status", "What's your employment status? Are you salaried, self-employed, or in business?"),
+            ("num_dependents", "How many dependents do you have?")
+        ]
+        missing = context.get("missing_fields", [])
+        collected = context.get("collected_data", {}) or {}
+        next_field = None
+        for key, question in required_order:
+            # If this field is missing, ask for it next
+            display_map = {
+                "annual_income": "annual income",
+                "credit_score": "credit score",
+                "loan_amount": "loan amount",
+                "num_dependents": "number of dependents",
+                "employment_status": "employment status",
+                "full_name": "full name",
+                "email": "email address"
+            }
+            display_name = display_map.get(key, key)
+            if display_name in missing:
+                next_field = key
+                response += f" {question}"
+                context["next_question_key"] = key
+                break
+
+        # If all fields are collected, prompt for document upload
+        if not missing:
+            response += "Perfect! I have all the key information I need. Please upload your bank statement or ID proof to continue with document verification."
+            context["action"] = "request_document"
 
     elif intent == "loan_inquiry":
         response = "I'd be happy to help you with your loan application! To determine the best loan amount and terms for you, I need some basic information. Let's start with your annual income - this helps me understand what loan amounts might work for your situation."
@@ -568,7 +898,20 @@ def _generate_conversational_response(message: str, context: dict, application, 
         if not svc.health():
             response = _fallback_single_question(context, application)
         else:
-            response = svc.generate(message, context_data)
+            # Include recent conversation history as part of context if db is available
+            history = []
+            try:
+                if db is not None:
+                    history = _get_conversation_history(db, application, user_id, limit=8)
+            except Exception:
+                history = []
+
+            # Merge context_data with history
+            merged_context = (context_data or {}).copy() if context_data else {}
+            if history:
+                merged_context["history"] = history
+
+            response = svc.generate(message, merged_context)
             # Guard against provider errors with a helpful fallback
             if not response or response.strip() == "" or response.lower().startswith("sorry, i'm having trouble responding right now"):
                 response = _fallback_single_question(context, application)
@@ -689,7 +1032,7 @@ async def _collect_applicant_details(message: str, application, db: Session, use
                 "collected_values": extracted_data
             }
     else:
-        # Update existing application
+        # Update existing application: always overwrite with new user data
         for field, value in extracted_data.items():
             if hasattr(application, field):
                 setattr(application, field, value)
@@ -813,36 +1156,37 @@ def _extract_data_from_message(message: str) -> dict:
     extracted = {}
     message_lower = message.lower()
     message_stripped = message.strip()
-
-    # Extract numbers that might be income, loan amount, credit score, etc.
     import re
 
     # Email address
     email_match = re.search(r'([a-zA-Z0-9_.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+)', message)
     if email_match:
         extracted["email"] = email_match.group(1)
+    # Fallback: treat a plain email-like string as email
+    elif re.fullmatch(r'[a-zA-Z0-9_.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+', message_stripped):
+        extracted["email"] = message_stripped
 
     # Name phrases: "my name is X", "I'm X", "I am X", "This is X"
     name_phrase = re.search(r"(?:my\s+name\s+is|i\s*am|i'm|this\s+is)\s+([A-Za-z][A-Za-z\-']+(?:\s+[A-Za-z][A-Za-z\-']+){0,3})", message_lower, re.IGNORECASE)
     if name_phrase:
         name_val = name_phrase.group(1).strip()
-        # Title-case the name reasonably
         extracted["full_name"] = " ".join([p.capitalize() for p in name_val.split()])
 
-    # Name-only message fallback (restrict to Title Case names and avoid generic loan words)
+    employment_statuses = {"salaried": "salaried", "self-employed": "self-employed", "business": "business"}
+    if message_stripped.lower() in employment_statuses:
+        extracted["employment_status"] = employment_statuses[message_stripped.lower()]
     if "full_name" not in extracted:
         words = message_stripped.split()
-        loan_keywords = {"loan", "apply", "application", "amount", "borrow", "credit", "score", "income", "salary"}
+        loan_keywords = {"loan", "apply", "application", "amount", "borrow", "credit", "score", "income", "salary", "salaried", "self-employed", "business"}
         if (
             1 <= len(words) <= 3
             and not any(w.lower() in loan_keywords for w in words)
             and all(w[0].isupper() and any(c.islower() for c in w[1:]) for w in words if w and w[0].isalpha())
-            and re.fullmatch(r"^[A-Za-z][A-Za-z\-'\.]+(?:\s+[A-Za-z][A-Za-z\-'\.]+){0,2}$", message_stripped)
+            and re.fullmatch(r"^[A-Za-z][A-Za-z\-'.]+(?:\s+[A-Za-z][A-Za-z\-'.]+){0,2}$", message_stripped)
         ):
             extracted["full_name"] = " ".join([p[0].upper() + p[1:] if len(p) > 1 else p.upper() for p in words])
 
     # Income patterns
-    # Support lakh/crore units as well
     unit_income = re.search(r'(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', message_lower)
     if unit_income:
         amount = float(unit_income.group(1))
@@ -851,11 +1195,18 @@ def _extract_data_from_message(message: str) -> dict:
         extracted["annual_income"] = int(round(amount * multiplier))
     else:
         income_match = re.search(r'income.*?(\d{4,8})|salary.*?(\d{4,8})|earn.*?(\d{4,8})', message_lower)
+        found_income = False
         if income_match:
             for group in income_match.groups():
                 if group and len(group) >= 4:
                     extracted["annual_income"] = int(group)
+                    found_income = True
                     break
+        # Fallback: treat a plain 5-8 digit string as income if not already matched as loan amount
+        if not found_income and "annual_income" not in extracted:
+            plain_income = re.fullmatch(r"\d{5,8}", message_stripped)
+            if plain_income and ("loan_amount" not in extracted or int(message_stripped) != extracted["loan_amount"]):
+                extracted["annual_income"] = int(message_stripped)
 
     # Loan amount patterns
     unit_loan = re.search(r'(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores)', message_lower)
@@ -866,11 +1217,18 @@ def _extract_data_from_message(message: str) -> dict:
         extracted["loan_amount"] = int(round(amount * multiplier))
     else:
         loan_match = re.search(r'loan.*?(\d{4,8})|borrow.*?(\d{4,8})|need.*?(\d{4,8})', message_lower)
+        found = False
         if loan_match:
             for group in loan_match.groups():
                 if group and len(group) >= 4:
                     extracted["loan_amount"] = int(group)
+                    found = True
                     break
+        # If not found, treat a plain 5-8 digit number as loan amount (if not already matched as income)
+        if not found and "loan_amount" not in extracted:
+            plain_num = re.fullmatch(r"\d{5,8}", message_stripped)
+            if plain_num and ("annual_income" not in extracted or int(message_stripped) != extracted["annual_income"]):
+                extracted["loan_amount"] = int(message_stripped)
 
     # Credit score patterns
     credit_match = re.search(r'credit.*?(\d{3})|score.*?(\d{3})', message_lower)
@@ -884,6 +1242,9 @@ def _extract_data_from_message(message: str) -> dict:
     phone_match = re.search(r'(\d{10})', message)
     if phone_match:
         extracted["phone"] = phone_match.group(1)
+    # Fallback: treat a plain 10-digit string as phone
+    elif re.fullmatch(r'\d{10}', message_stripped):
+        extracted["phone"] = message_stripped
 
     # Employment status
     if "employed" in message_lower:
@@ -893,10 +1254,15 @@ def _extract_data_from_message(message: str) -> dict:
     elif "unemployed" in message_lower:
         extracted["employment_status"] = "unemployed"
 
-    # Dependents
+    # Dependents: match explicit phrase or infer from plain number if last question was about dependents
     dep_match = re.search(r'(\d+)\s*(?:dependent|kid|child)', message_lower)
     if dep_match:
         extracted["num_dependents"] = int(dep_match.group(1))
+    else:
+        if message_stripped.isdigit():
+            num = int(message_stripped)
+            if 0 <= num <= 20:
+                extracted["num_dependents"] = num
 
     return extracted
 

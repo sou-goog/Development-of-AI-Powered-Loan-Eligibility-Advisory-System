@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { loanAPI } from "../utils/api";
@@ -109,68 +110,84 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
-  // Prefill from last application for this user, if available
+  // Prefill from applicationId in URL or last application for this user
+  const location = useLocation();
   useEffect(() => {
     const prefill = async () => {
       try {
-        if (!auth.isAuthenticated()) return;
-        const res = await loanAPI.getLastApplication();
-        const app = res.data || {};
-        setFormData((prev) => ({
-          ...prev,
-          // Personal
-          full_name: app.full_name || prev.full_name,
-          email: app.email || prev.email,
-          phone: app.phone || prev.phone,
-          age: app.age ?? prev.age,
-          gender: app.gender || prev.gender,
-          marital_status: app.marital_status || prev.marital_status,
-          dependents: app.dependents ?? prev.dependents,
-          // Employment & Income
-          employment_type:
-            app.employment_type ||
-            app.employment_status ||
-            prev.employment_type,
-          monthly_income:
-            app.monthly_income ??
-            (app.annual_income
-              ? Math.round(app.annual_income / 12)
-              : prev.monthly_income),
-          existing_emi: app.existing_emi ?? prev.existing_emi,
-          salary_credit_frequency:
-            app.salary_credit_frequency || prev.salary_credit_frequency,
-          // Loan Details
-          loan_amount_requested:
-            app.loan_amount_requested ??
-            app.loan_amount ??
-            prev.loan_amount_requested,
-          loan_tenure_years:
-            app.loan_tenure_years ??
-            (app.loan_term_months
-              ? Math.round(app.loan_term_months / 12)
-              : prev.loan_tenure_years),
-          loan_purpose: app.loan_purpose || prev.loan_purpose,
-          // Financial & Location
-          credit_score: app.credit_score ?? prev.credit_score,
-          total_deposits: app.total_deposits ?? prev.total_deposits,
-          total_withdrawals: app.total_withdrawals ?? prev.total_withdrawals,
-          avg_balance: app.avg_balance ?? prev.avg_balance,
-          bounced_transactions:
-            app.bounced_transactions ?? prev.bounced_transactions,
-          account_age_months: app.account_age_months ?? prev.account_age_months,
-          total_liabilities: app.total_liabilities ?? prev.total_liabilities,
-          region: app.region || prev.region,
-          bank_name: app.bank_name || prev.bank_name,
-        }));
-        toast.info(
-          "Loaded your last application details. You can modify and submit."
-        );
+        let app = {};
+        const params = new URLSearchParams(location.search);
+        const applicationId = params.get("applicationId");
+        if (applicationId) {
+          // Fetch application by ID
+          const res = await loanAPI.getApplicationById(applicationId);
+          app = res.data || {};
+        } else if (auth.isAuthenticated()) {
+          // Fallback: fetch last application
+          const res = await loanAPI.getLastApplication();
+          app = res.data || {};
+        }
+        if (Object.keys(app).length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            // Personal
+            full_name: app.full_name || prev.full_name,
+            email: app.email || prev.email,
+            phone: app.phone || prev.phone,
+            age: app.age ?? prev.age,
+            gender: app.gender || prev.gender,
+            marital_status: app.marital_status || prev.marital_status,
+            dependents: app.dependents ?? prev.dependents,
+            // Employment & Income
+            employment_type:
+              app.employment_type ||
+              app.employment_status ||
+              prev.employment_type,
+            monthly_income:
+              app.monthly_income ??
+              (app.annual_income
+                ? Math.round(app.annual_income / 12)
+                : prev.monthly_income),
+            existing_emi: app.existing_emi ?? prev.existing_emi,
+            salary_credit_frequency:
+              app.salary_credit_frequency || prev.salary_credit_frequency,
+            // Loan Details
+            loan_amount_requested:
+              app.loan_amount_requested ??
+              app.loan_amount ??
+              prev.loan_amount_requested,
+            loan_tenure_years:
+              app.loan_tenure_years ??
+              (app.loan_term_months
+                ? Math.round(app.loan_term_months / 12)
+                : prev.loan_tenure_years),
+            loan_purpose: app.loan_purpose || prev.loan_purpose,
+            // Financial & Location
+            credit_score: app.credit_score ?? prev.credit_score,
+            total_deposits: app.total_deposits ?? prev.total_deposits,
+            total_withdrawals: app.total_withdrawals ?? prev.total_withdrawals,
+            avg_balance: app.avg_balance ?? prev.avg_balance,
+            bounced_transactions:
+              app.bounced_transactions ?? prev.bounced_transactions,
+            account_age_months:
+              app.account_age_months ?? prev.account_age_months,
+            total_liabilities: app.total_liabilities ?? prev.total_liabilities,
+            region: app.region || prev.region,
+            bank_name: app.bank_name || prev.bank_name,
+          }));
+          toast.info(
+            applicationId
+              ? `Loaded application #${applicationId}. You can modify and submit.`
+              : "Loaded your last application details. You can modify and submit."
+          );
+        }
       } catch (e) {
         // No previous application or error; ignore silently
       }
     };
     prefill();
-  }, []);
+    // Only run when location.search changes
+  }, [location.search]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -272,32 +289,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     }
   };
 
-  const renderStepIndicator = () => (
-    <div className="flex items-center justify-center mb-8">
-      {Array.from({ length: totalSteps }, (_, i) => (
-        <div key={i} className="flex items-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ${
-              i + 1 <= currentStep
-                ? "bg-primary-600 text-white"
-                : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            {i + 1}
-          </motion.div>
-          {i < totalSteps - 1 && (
-            <div
-              className={`w-12 h-1 mx-2 ${
-                i + 1 < currentStep ? "bg-primary-600" : "bg-gray-200"
-              }`}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  );
+  // Step indicator removed (unused) to satisfy eslint `no-unused-vars`.
 
   const renderPersonalInfo = () => (
     <motion.div
@@ -324,7 +316,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="full_name"
               value={formData.full_name}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="Enter your full name"
               required
             />
@@ -342,7 +334,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="email"
               value={formData.email}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="your@email.com"
               required
             />
@@ -360,7 +352,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="phone"
               value={formData.phone}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="+1 (555) 123-4567"
               required
             />
@@ -376,7 +368,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="age"
             value={formData.age}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="25"
             min="18"
             max="100"
@@ -392,7 +384,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="gender"
             value={formData.gender}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100"
             required
           >
             <option value="">Select Gender</option>
@@ -410,7 +402,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="marital_status"
             value={formData.marital_status}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             required
           >
             <option value="">Select Status</option>
@@ -430,7 +422,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="dependents"
             value={formData.dependents}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="0"
             min="0"
           />
@@ -463,7 +455,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="employment_type"
               value={formData.employment_type}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               required
             >
               <option value="">Select Employment Type</option>
@@ -488,7 +480,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="monthly_income"
               value={formData.monthly_income}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="50000"
               min="0"
               required
@@ -507,7 +499,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="existing_emi"
               value={formData.existing_emi}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="0"
               min="0"
             />
@@ -522,7 +514,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="salary_credit_frequency"
             value={formData.salary_credit_frequency}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             required
           >
             <option value="">Select Frequency</option>
@@ -559,7 +551,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="loan_amount_requested"
               value={formData.loan_amount_requested}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="500000"
               min="10000"
               required
@@ -578,7 +570,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="loan_tenure_years"
               value={formData.loan_tenure_years}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="5"
               min="1"
               max="30"
@@ -595,7 +587,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="loan_purpose"
             value={formData.loan_purpose}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             required
           >
             <option value="">Select Loan Purpose</option>
@@ -639,7 +631,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="credit_score"
               value={formData.credit_score}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="650"
               min="300"
               max="900"
@@ -657,7 +649,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="region"
               value={formData.region}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               required
             >
               <option value="">Select Region</option>
@@ -679,7 +671,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
               name="bank_name"
               value={formData.bank_name}
               onChange={handleInputChange}
-              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
               placeholder="e.g., HDFC Bank, SBI"
               required
             />
@@ -695,7 +687,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="account_age_months"
             value={formData.account_age_months}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="12"
             min="1"
           />
@@ -710,7 +702,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="avg_balance"
             value={formData.avg_balance}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="50000"
             min="0"
           />
@@ -725,7 +717,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="total_liabilities"
             value={formData.total_liabilities}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="0"
             min="0"
           />
@@ -750,10 +742,34 @@ const LoanApplicationForm = ({ onFormComplete }) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-8">
-      {renderStepIndicator()}
+    <div className="max-w-4xl mx-auto glass shadow-2xl p-10 mt-10 mb-10 animate-fade-in">
+      {/* Stepper */}
+      <div className="flex justify-between items-center mb-10">
+        {[1, 2, 3, 4].map((step) => (
+          <div key={step} className="flex-1 flex flex-col items-center">
+            <div
+              className={`w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg border-4 transition-all duration-300 ${
+                currentStep === step
+                  ? "bg-primary-600 text-white border-primary-400 scale-110 shadow-lg"
+                  : "bg-white text-primary-600 border-gray-200 dark:bg-gray-800 dark:text-primary-300"
+              }`}
+            >
+              {step}
+            </div>
+            <span
+              className={`mt-2 text-xs font-semibold ${
+                currentStep === step
+                  ? "text-primary-600"
+                  : "text-gray-400 dark:text-gray-500"
+              }`}
+            >
+              {["Personal", "Employment", "Loan", "Financial"][step - 1]}
+            </span>
+          </div>
+        ))}
+      </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="space-y-8">
         {renderCurrentStep()}
 
         <div className="flex justify-between mt-8">
@@ -761,7 +777,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             type="button"
             onClick={handlePrev}
             disabled={currentStep === 1}
-            className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Previous
           </button>
@@ -770,7 +786,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             <button
               type="button"
               onClick={handleNext}
-              className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center"
+              className="btn-primary flex items-center"
             >
               Next
               <ArrowRight className="ml-2 w-4 h-4" />
@@ -779,7 +795,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl shadow-lg transition-all duration-200 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Submitting..." : "Submit Application"}
               <ArrowRight className="ml-2 w-4 h-4" />

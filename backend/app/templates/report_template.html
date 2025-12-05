@@ -278,6 +278,21 @@
                 <p>{{ manager_notes }}</p>
             </div>
         </div>
+
+        <div class="section">
+            <div class="section-title">AI Analysis</div>
+            <div class="notes-section">
+                {% if ai_analysis %}
+                    <p>{{ ai_analysis }}</p>
+                {% else %}
+                    <p>No AI analysis available.</p>
+                {% endif %}
+                <p style="margin-top:10px;font-size:12px;color:#666;">Source: {{ analysis_source or 'n/a' }}</p>
+                {% if llm_error %}
+                    <p style="color:#a00;font-size:12px;">LLM Error: {{ llm_error }}</p>
+                {% endif %}
+            </div>
+        </div>
         
         <div class="footer">
             <p>This is an official report from the AI Loan System.</p>

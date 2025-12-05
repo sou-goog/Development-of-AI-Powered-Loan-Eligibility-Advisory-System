@@ -14,8 +14,25 @@ from contextlib import asynccontextmanager
 # Load environment variables from backend/.env explicitly
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
+# Auto-detect local voice models (non-invasive):
+# - If PIPER_MODEL not set, and backend/piper_voices/*.onnx exists, set PIPER_MODEL to the first ONNX path.
+# - If VOSK_MODEL_PATH not set, prefer ./models/vosk-model-small-en-us-0.15 when present.
+backend_root = Path(__file__).parent
+if not os.getenv("PIPER_MODEL"):
+    piper_dir = backend_root / "piper_voices"
+    if piper_dir.exists():
+        onnx = next(piper_dir.glob("*.onnx"), None)
+        if onnx:
+            os.environ["PIPER_MODEL"] = str(onnx)
+
+if not os.getenv("VOSK_MODEL_PATH"):
+    default_vosk = backend_root / "models" / "vosk-model-small-en-us-0.15"
+    if default_vosk.exists():
+        os.environ["VOSK_MODEL_PATH"] = str(default_vosk)
+
 # Import routes
 from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes
+from app.routes import voice_health
 from app.models.database import Base, engine, DB_FALLBACK_USED
 
 @asynccontextmanager
@@ -59,6 +76,7 @@ app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(voice_routes.router, prefix="/api/voice", tags=["Voice"])
 app.include_router(voice_realtime.router)
 app.include_router(voice_realtime_v2.router, prefix="/api", tags=["Voice Agent - Real-time Streaming"])
+app.include_router(voice_health.router, prefix="/api/voice", tags=["Voice Health"])
 app.include_router(ocr_routes.router, prefix="/api/verify", tags=["Document Verification"])
 app.include_router(loan_routes.router, prefix="/api/loan", tags=["Loan Prediction"])
 app.include_router(report_routes.router, prefix="/api/report", tags=["Reports"])
@@ -78,6 +96,44 @@ async def read_root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/api/admin/llm-info", tags=["Admin"])
+async def llm_info():
+    """Return LLM provider info for debugging: provider name, class, and health."""
+    from app.services.llm_selector import get_llm_service
+    import os
+
+    provider_env = os.getenv("LLM_PROVIDER", "<not-set>")
+    # instantiate the provider but don't run a generate call
+    try:
+        svc = get_llm_service()
+        cls = svc.__class__.__name__
+        healthy = False
+        try:
+            healthy = bool(svc.health())
+        except Exception:
+            healthy = False
+    except Exception as e:
+        cls = f"error: {e}"
+        healthy = False
+
+    def mask(key: str) -> str:
+        if not key:
+            return "<empty>"
+        if len(key) <= 8:
+            return key[:2] + "..."
+        return key[:4] + "..." + key[-4:]
+
+    return {
+        "LLM_PROVIDER_env": provider_env,
+        "provider_class": cls,
+        "provider_healthy": healthy,
+        "OPENROUTER_MODEL": os.getenv("OPENROUTER_MODEL"),
+        "OPENROUTER_API_KEY_masked": mask(os.getenv("OPENROUTER_API_KEY", "")),
+        "OLLAMA_MODEL": os.getenv("OLLAMA_MODEL"),
+        "OLLAMA_API_URL": os.getenv("OLLAMA_API_URL"),
+    }
 
 # Optional DB health for diagnostics
 @app.get("/api/admin/db-health", tags=["Health"])

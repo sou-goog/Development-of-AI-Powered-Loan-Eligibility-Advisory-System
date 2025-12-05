@@ -123,8 +123,17 @@ async def synthesize_piper_audio(text: str) -> Optional[bytes]:
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as out_f:
         out_path = out_f.name
     # Piper CLI invocation -- attempt to be compatible with common piper CLIs
-    # Example: piper --model en_US-amy-medium --text "hello" --outfile out.wav
-    cmd = ["piper", "--model", PIPER_MODEL, "--text", text, "--output_audio", out_path]
+    # Resolve backend-local model if available (backend/piper_voices/<model>.onnx)
+    backend_root = Path(__file__).resolve().parents[2]
+    candidate = backend_root / "piper_voices" / f"{PIPER_MODEL}.onnx"
+    voices_dir = backend_root / "piper_voices"
+    if candidate.exists():
+        cmd = ["piper", "--model", str(candidate), "--text", text, "--output_file", out_path]
+    elif voices_dir.exists():
+        cmd = ["piper", "--data-dir", str(voices_dir), "--text", text, "--output_file", out_path]
+    else:
+        # Fallback to simple model tag or system piper
+        cmd = ["piper", "--model", PIPER_MODEL, "--text", text, "--output_file", out_path]
     try:
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await proc.communicate()

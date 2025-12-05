@@ -81,6 +81,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# Ignore downloaded model artifacts and generated voices
+backend/.env
+backend/piper_voices/
+backend/models/
+backend/app/static/voices/
 
 # Spyder project settings
 .spyderproject

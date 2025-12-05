@@ -1,10 +1,23 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
-// Landing + Application pages
+import MainLayout from "./layout/MainLayout";
+
+// Pages
 import Home from "./pages/Home";
-import ApplyPage from "./pages/ApplyPage";
 import AuthPage from "./pages/AuthPage";
+import ApplyPage from "./pages/ApplyPage";
+import Verification from "./pages/Verification";
+import Manager from "./pages/Manager";
+import EligibilityResultPage from "./pages/EligibilityResultPage";
+import MiniChatbot from "./components/MiniChatbot";
 
 // Dashboard pages
 import Login from "./pages/Login";
@@ -19,15 +32,42 @@ import ProjectOverview from "./pages/ProjectOverview";
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 
 // Voice agent
-import VoiceAgentRealtime_v2 from "./components/VoiceAgentRealtime_v2";
+import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtime_v2";
 
-function App() {
+// Utils
+import { auth } from "./utils/auth";
+
+// Protected Route Wrapper
+function ProtectedRoute({ children, requireManager = false }) {
+  const authed = auth.isAuthenticated();
+  const manager = auth.isManager();
+
+  if (!authed) return <Navigate to="/auth" replace />;
+  if (requireManager && !manager) return <Navigate to="/" replace />;
+
+  return children;
+}
+
+export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <Router>
+      <MainLayout>
+        <Routes>
+          <Route path="/" element={<Home />} />
 
-        {/* Landing Page */}
-        <Route path="/" element={<Home />} />
+          <Route
+            path="/auth"
+            element={
+              auth.isAuthenticated() ? (
+                <Navigate
+                  to={auth.isManager() ? "/manager" : "/apply"}
+                  replace
+                />
+              ) : (
+                <AuthPage />
+              )
+            }
+          />
 
         {/* Application Page */}
         <Route path="/apply" element={<ApplyPage />} />
@@ -55,9 +95,22 @@ function App() {
         {/* 404 → redirect home */}
         <Route path="*" element={<Navigate to="/" />} />
 
-      </Routes>
-    </BrowserRouter>
+          {/* Loan Rejection Details */}
+          <Route
+            path="/loan-rejection/:userId"
+            element={
+              <ProtectedRoute>
+                <LoanRejectionDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Voice agent (if needed) */}
+          <Route path="/voice-agent" element={<VoiceAgentRealtimeV2 />} />
+        </Routes>
+
+        <ToastContainer position="top-right" autoClose={4000} />
+      </MainLayout>
+    </Router>
   );
 }
-
-export default App;

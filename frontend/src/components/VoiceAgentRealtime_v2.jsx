@@ -22,6 +22,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Phone, PhoneOff, Volume2, VolumeX } from 'lucide-react';
+import FileUpload from './FileUpload';
+import { toast } from 'react-toastify';
 
 const VoiceAgentRealtime = () => {
   // Connection state
@@ -38,6 +40,8 @@ const VoiceAgentRealtime = () => {
   // Structured data extracted by AI
   const [extractedData, setExtractedData] = useState({});
   const [eligibilityResult, setEligibilityResult] = useState(null);
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+  const [applicationId, setApplicationId] = useState(null);
 
   // Refs for persistent connections
   const wsRef = useRef(null);
@@ -134,6 +138,16 @@ const VoiceAgentRealtime = () => {
 
       case 'eligibility_result':
         setEligibilityResult(data);
+        break;
+
+      case 'document_verification_required':
+        // Show document upload button
+        setShowDocumentUpload(true);
+        setExtractedData(data.structured_data);
+        // Add AI message about document verification
+        if (data.message) {
+          setFinalTranscripts(prev => [...prev, { role: 'assistant', text: data.message }]);
+        }
         break;
 
       case 'error':
@@ -388,6 +402,63 @@ const VoiceAgentRealtime = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Document Upload Section */}
+      {showDocumentUpload && !eligibilityResult && (
+        <div className="bg-white border-2 border-blue-400 rounded-lg shadow-lg p-6 mb-4">
+          <div className="text-center mb-4">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              📄 Document Verification Required
+            </h3>
+            <p className="text-gray-700 mb-4">
+              Thank you! I have collected all your details. Now please upload your identity document for verification before we process your loan eligibility.
+            </p>
+            
+            {/* Display collected information */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-left">
+              <p className="text-sm font-medium text-blue-900 mb-2">
+                📋 Your Application Details:
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-xs text-blue-700">
+                <div>
+                  <span className="font-semibold">Name:</span> {extractedData.name}
+                </div>
+                <div>
+                  <span className="font-semibold">Monthly Income:</span> ${extractedData.monthly_income?.toLocaleString()}
+                </div>
+                <div>
+                  <span className="font-semibold">Credit Score:</span> {extractedData.credit_score}
+                </div>
+                <div>
+                  <span className="font-semibold">Loan Amount:</span> ${extractedData.loan_amount?.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Embedded File Upload Component */}
+          <FileUpload
+            onUploadSuccess={(data) => {
+              toast.success('Document uploaded successfully!');
+              
+              // Generate application ID
+              const tempAppId = applicationId || Date.now();
+              setApplicationId(tempAppId);
+              
+              // Send document verified message to backend
+              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'document_verified',
+                  application_id: tempAppId,
+                  extracted_data: data.extracted_data
+                }));
+              }
+            }}
+            applicationId={applicationId || Date.now().toString()}
+            autoCheck={false}
+          />
         </div>
       )}
 

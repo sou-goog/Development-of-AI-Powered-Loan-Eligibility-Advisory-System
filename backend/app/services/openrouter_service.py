@@ -80,7 +80,7 @@ class OpenRouterService(LLMProvider):
     def generate(self, prompt: str, context: Optional[Dict] = None) -> str:
         """Generate a response using OpenRouter chat completions."""
         if not self.api_key:
-            return "OpenRouter API key is missing. Please configure OPENROUTER_API_KEY."
+            raise RuntimeError("OpenRouter API key is missing. Please configure OPENROUTER_API_KEY.")
         allow_system = True
         payload = {
             "model": self.model_name,
@@ -130,14 +130,15 @@ class OpenRouterService(LLMProvider):
                     backoff *= 2
                     continue
 
-                # Non-retryable
+                # Non-retryable: raise to allow upstream handler to fall back to heuristic
                 logger.error(f"OpenRouter API error: {resp.status_code} - {resp.text}")
-                break
+                raise RuntimeError(f"OpenRouter API error: {resp.status_code} - {resp.text}")
 
-            return "Sorry, I'm having trouble responding right now. Please try again."
+            # If we exhausted retries, raise an error so caller can handle fallback
+            raise RuntimeError("OpenRouter: exhausted retries or transient errors")
         except requests.RequestException as e:
             logger.error(f"OpenRouter request failed: {e}")
-            return "Sorry, I couldn't reach the assistant service. Please try again."
+            raise RuntimeError(f"OpenRouter request failed: {e}")
 
     def health(self) -> bool:
         # Basic health: presence of API key

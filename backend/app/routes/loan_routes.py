@@ -144,13 +144,67 @@ async def verify_application_document(
                 status_code=404,
                 detail="Application not found"
             )
+        # Enforce document verification rules before running prediction
+        if not getattr(app, "document_verified", False):
+            # Provide helpful detail about what's missing
+            raw_uploaded = (app.extracted_data or {}).get("uploaded_documents") if isinstance(app.extracted_data, dict) else []
+            # Normalize to ids for clarity
+            uploaded_ids = []
+            for it in (raw_uploaded or []):
+                if isinstance(it, dict):
+                    uploaded_ids.append(it.get("id"))
+                else:
+                    uploaded_ids.append(it)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Required documents not uploaded",
+                    "uploaded_documents": uploaded_ids or [],
+                    "required": {
+                        "identity": ["aadhaar", "pan", "kyc"],
+                        "financial": ["bank_statement", "salary_slip"]
+                    }
+                }
+            )
         
         # Get extracted data from request
         extracted_data = request.get("extracted_data", {})
         
         # Update document verification status
-        app.document_verified = True
-        app.extracted_data = extracted_data
+        # Merge uploaded_documents if provided and compute verification according to rules
+        prev = app.extracted_data or {}
+        uploaded = prev.get("uploaded_documents", []) if isinstance(prev, dict) else []
+        # If request provided a document_type or uploaded_documents, merge them
+        if isinstance(extracted_data, dict):
+            provided_docs = extracted_data.get("uploaded_documents") or []
+            if provided_docs and isinstance(provided_docs, list):
+                for d in provided_docs:
+                    # Normalize dicts to id when checking duplicates
+                    did = d.get("id") if isinstance(d, dict) else d
+                    exists = False
+                    for existing in uploaded:
+                        ex_id = existing.get("id") if isinstance(existing, dict) else existing
+                        if ex_id == did:
+                            exists = True
+                            break
+                    if not exists:
+                        # Prefer storing the rich object if provided, else store id
+                        uploaded.append(d)
+
+        # Merge extracted_data into stored extracted_data
+        merged = dict(prev or {})
+        merged.update(extracted_data or {})
+        merged["uploaded_documents"] = uploaded
+        app.extracted_data = merged
+
+        # Determine verification: require one identity doc and one financial doc
+        identity_group = {"aadhaar", "pan", "kyc"}
+        financial_group = {"bank_statement", "salary_slip"}
+        # Normalize uploaded to ids for checking
+        uploaded_ids = [ (x.get("id") if isinstance(x, dict) else x) for x in uploaded ]
+        has_identity = any(d in identity_group for d in uploaded_ids)
+        has_financial = any(d in financial_group for d in uploaded_ids)
+        app.document_verified = bool(has_identity and has_financial)
         
         # Update extracted financial data if provided
         if extracted_data:

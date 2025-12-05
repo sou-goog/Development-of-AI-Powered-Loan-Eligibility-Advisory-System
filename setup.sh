@@ -62,6 +62,25 @@ source venv/bin/activate
 echo "  Installing dependencies..."
 pip install -r requirements.txt -q
 
+# Download a recommended Piper voice for local TTS if not present
+if [ ! -d "piper_voices" ] || [ ! -f "piper_voices/en_US-amy-medium.onnx" ]; then
+    echo "  Downloading Piper voice: en_US-amy-medium"
+    python -m piper.download_voices en_US-amy-medium --download-dir ./piper_voices || echo "  Could not download Piper voice automatically. Run: python -m piper.download_voices en_US-amy-medium --download-dir ./piper_voices"
+fi
+
+# Download a small Vosk model for offline STT if not present
+if [ ! -d "models/vosk-model-small-en-us-0.15" ]; then
+    echo "  Downloading Vosk small English model (≈20MB) into ./models"
+    mkdir -p models
+    curl -L -o /tmp/vosk-small.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip || true
+    if [ -f /tmp/vosk-small.zip ]; then
+        unzip -q /tmp/vosk-small.zip -d models || echo "  Failed to unzip Vosk model. Please unzip /tmp/vosk-small.zip into backend/models/"
+        rm -f /tmp/vosk-small.zip
+    else
+        echo "  Could not download Vosk model automatically. Please download from https://alphacephei.com/vosk/models and extract into backend/models/vosk-model-small-en-us-0.15"
+    fi
+fi
+
 if [ ! -f ".env" ]; then
     echo "  Creating .env file..."
     cp .env.example .env

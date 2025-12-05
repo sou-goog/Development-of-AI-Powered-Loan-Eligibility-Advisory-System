@@ -1,125 +1,134 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import Chatbot from "../components/Chatbot";
-import CallingAgentPanel from "../components/CallingAgentPanel";
+import MiniChatbot from "../components/MiniChatbot";
 import LoanApplicationForm from "../components/LoanApplicationForm";
 import LoanResultCard from "../components/LoanResultCard";
-import { useLocation } from "react-router-dom";
+import CallingAgentPanel from "../components/CallingAgentPanel";
 
-const ApplyPage = () => {
+/*
+  Redesigned Apply Page
+  - Cleaner split layout
+  - Modern card styles matching Home + Navbar redesign
+  - Smooth transitions between chatbot, voice panel, and form
+  - Professional dashboard-like layout
+  - Reusable motion presets
+*/
+
+export default function ApplyPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const formRef = useRef(null);
   const resultRef = useRef(null);
+
   const [eligibilityResult, setEligibilityResult] = useState(null);
   const [applicationData, setApplicationData] = useState(null);
   const [applicationId, setApplicationId] = useState(null);
+
   const params = new URLSearchParams(location.search);
   const view = params.get("view") || "voice"; // voice | form
 
   useEffect(() => {
     if (view === "form" && formRef.current) {
-      // Smooth scroll to the form when requested
       formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [view]);
 
-  // If navigated from Verification with eligibilityResult in state, show results
   useEffect(() => {
     const state = location.state || {};
     if (state.eligibilityResult) {
       setEligibilityResult(state.eligibilityResult);
       if (state.applicationId) setApplicationId(state.applicationId);
+
       setTimeout(() => {
-        resultRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 100);
+        resultRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 150);
     }
   }, [location.state]);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-10">
-        {/* Page intro */}
+    <div className="min-h-screen bg-slate-50 py-14 px-6 relative">
+      <div className="max-w-7xl mx-auto w-full space-y-10">
+        {/* Intro Banner */}
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="bg-white border shadow-lg rounded-3xl p-8 mb-4"
         >
-          <h1 className="text-4xl font-bold text-gray-900 text-center mb-3">
-            Apply for a Loan
-          </h1>
-          <p className="text-gray-600 text-center max-w-3xl mx-auto">
-            Choose how you’d like to proceed. You can chat with our AI assistant
-            or use the voice-based calling agent. Both options connect to the
-            same application flow.
-          </p>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between text-center md:text-left">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4 md:mb-0">
+                Apply for a Loan
+              </h1>
+              <p className="text-slate-600 max-w-3xl text-lg mb-6 md:mb-0">
+                Use the voice agent for instant eligibility, or fill out the form directly. You can get help from the AI assistant anytime.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/")}
+              className="mt-4 md:mt-0 px-6 py-2 bg-primary-600 text-white font-semibold rounded-full shadow hover:bg-primary-700 transition"
+            >
+              Go to Home
+            </button>
+          </div>
         </motion.div>
 
-        {/* Side-by-side: Chatbot + Voice panel or Detailed Form */}
+        {/* Split Layout: Voice Agent Left, Form Right */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left: Voice Agent */}
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7 }}
+            className="bg-white border shadow-md rounded-2xl p-6 flex flex-col justify-between"
           >
-            <div className="h-[70vh] md:h-[75vh]">
-              <Chatbot showVoiceAgentInHeader={false} />
-            </div>
+            <h2 className="text-xl font-semibold text-slate-800 mb-4">
+              Voice-Based Calling Agent
+            </h2>
+            <CallingAgentPanel />
+            {/* You can add tips or status here if needed */}
           </motion.div>
 
+          {/* Right: Application Form + Banner */}
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7 }}
+            className="bg-white border shadow-md rounded-2xl p-6"
           >
-            {view === "form" ? (
-              <div className="h-full space-y-6">
-                {!eligibilityResult ? (
-                  <div ref={formRef} id="form-section">
-                    <LoanApplicationForm
-                      onFormComplete={({
-                        formData,
-                        eligibilityResult: result,
-                        applicationId,
-                      }) => {
-                        setEligibilityResult(result);
-                        setApplicationData({
-                          ...formData,
-                          application_id: applicationId,
-                        });
-                        // Scroll to results
-                        setTimeout(() => {
-                          resultRef.current?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 100);
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div ref={resultRef} id="result-section">
-                    <LoanResultCard
-                      result={eligibilityResult}
-                      applicationData={applicationData}
-                      applicationId={
-                        applicationId || applicationData?.application_id
-                      }
-                    />
-                  </div>
-                )}
+            <div className="mb-4 p-4 bg-indigo-50 rounded-xl text-indigo-800 text-sm font-medium">
+              Need help? Use the AI Assistant (bottom right) or ask the voice agent for guidance.
+            </div>
+            {!eligibilityResult ? (
+              <div ref={formRef}>
+                <h2 className="text-xl font-semibold text-slate-800 mb-4">
+                  Loan Application Form
+                </h2>
+                <LoanApplicationForm
+                  setEligibilityResult={setEligibilityResult}
+                  setApplicationData={setApplicationData}
+                  setApplicationId={setApplicationId}
+                />
               </div>
             ) : (
-              <div className="h-[70vh] md:h-[75vh]">
-                <CallingAgentPanel />
+              <div ref={resultRef}>
+                <LoanResultCard
+                  result={eligibilityResult}
+                  applicationData={applicationData}
+                  applicationId={
+                    applicationId || applicationData?.application_id
+                  }
+                />
               </div>
             )}
           </motion.div>
         </div>
       </div>
+      {/* MiniChatbot fixed at bottom-right for all pages */}
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 50 }}>
+        <MiniChatbot applicationId={applicationId} />
+      </div>
     </div>
   );
-};
-
-export default ApplyPage;
+}

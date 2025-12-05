@@ -2,8 +2,6 @@
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -153,7 +151,9 @@ function VoiceAnalytics() {
 
       {/* Riya AI Call Logs */}
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mt-8">
-        <p className="text-sm font-semibold mb-3">Call Logs (Riya AI Insights)</p>
+        <p className="text-sm font-semibold mb-3">
+          Call Logs (Riya AI Insights)
+        </p>
         <table className="w-full text-left text-sm text-slate-300">
           <thead>
             <tr className="border-b border-slate-700">
@@ -189,8 +189,12 @@ function VoiceAnalytics() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-slate-800 p-6 rounded-xl w-96 border border-slate-700">
             <h2 className="text-lg font-bold mb-4">Riya AI Insights</h2>
-            <p><strong>Call ID:</strong> {selectedCall.callId}</p>
-            <p className="mt-2"><strong>Summary:</strong></p>
+            <p>
+              <strong>Call ID:</strong> {selectedCall.callId}
+            </p>
+            <p className="mt-2">
+              <strong>Summary:</strong>
+            </p>
             <p className="text-slate-300 mt-1">{selectedCall.aiSummary}</p>
             <button
               className="bg-red-500 text-white px-4 py-1 mt-5 rounded"

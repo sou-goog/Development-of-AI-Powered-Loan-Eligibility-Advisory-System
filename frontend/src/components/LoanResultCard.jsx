@@ -164,12 +164,18 @@ const LoanResultCard = ({
       setAnalysisError("");
       try {
         const { data } = await reportAPI.generateAnalysis(applicationId);
-        if (!cancelled) setAnalysis(data.analysis);
+        // Prefer explicit analysis text; if missing, fall back to raw payload for debugging
+        const analysisText = data?.analysis ?? JSON.stringify(data ?? {});
+        if (!cancelled) setAnalysis(analysisText);
       } catch (e) {
-        if (!cancelled)
-          setAnalysisError(
-            "Sorry, I'm having trouble responding right now. Please try again."
-          );
+        // Provide more detailed error feedback for debugging
+        let msg =
+          "Sorry, I'm having trouble responding right now. Please try again.";
+        try {
+          msg =
+            e?.response?.data?.detail || e?.response?.data || e?.message || msg;
+        } catch (__) {}
+        if (!cancelled) setAnalysisError(String(msg));
       } finally {
         if (!cancelled) setLoadingExplain(false);
       }
@@ -297,12 +303,21 @@ const LoanResultCard = ({
                   const { data } = await reportAPI.generateAnalysis(
                     applicationId
                   );
-                  setAnalysis(data.analysis);
+                  const analysisText =
+                    data?.analysis ?? JSON.stringify(data ?? {});
+                  setAnalysis(analysisText);
                   setAnalysisError("");
                 } catch (e) {
-                  setAnalysisError(
-                    "Sorry, I'm having trouble responding right now. Please try again."
-                  );
+                  let msg =
+                    "Sorry, I'm having trouble responding right now. Please try again.";
+                  try {
+                    msg =
+                      e?.response?.data?.detail ||
+                      e?.response?.data ||
+                      e?.message ||
+                      msg;
+                  } catch (__) {}
+                  setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
                 }
@@ -327,14 +342,22 @@ const LoanResultCard = ({
                   await reportAPI.generateReport(applicationId);
                   // Then trigger download
                   const res = await reportAPI.downloadReport(applicationId);
-                  const blob = new Blob([res.data], {
-                    type: "application/pdf",
-                  });
+                  const contentType =
+                    res.headers?.["content-type"] || "application/pdf";
+                  const blob = new Blob([res.data], { type: contentType });
                   const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `loan_report_${applicationId}.pdf`;
-                  a.click();
+                  // If the server returned HTML (fallback), open in new tab so browser can render it.
+                  if (contentType.includes("html")) {
+                    window.open(url, "_blank");
+                  } else {
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `loan_report_${applicationId}${
+                      contentType.includes("pdf") ? ".pdf" : ""
+                    }`;
+                    a.click();
+                    a.remove();
+                  }
                   window.URL.revokeObjectURL(url);
                 } catch (e) {
                   // optional: toast
@@ -367,7 +390,7 @@ const LoanResultCard = ({
             <div className="bg-secondary-100 p-2 rounded-lg">
               <CreditCard className="w-5 h-5 text-secondary-600" />
             </div>
-            <h4 className="text-lg font-semibold text-gray-900">
+            <h4 className="text-lg font-semibold text-primary-600">
               Application Summary
             </h4>
           </div>
@@ -411,7 +434,7 @@ const LoanResultCard = ({
 
             {extractedData && (
               <div>
-                <h5 className="font-medium text-gray-900 mb-3">
+                <h5 className="font-medium text-secondary-600 mb-3">
                   Document Verification
                 </h5>
                 <div className="space-y-2 text-sm">
@@ -459,20 +482,32 @@ const LoanResultCard = ({
         </motion.div>
       )}
 
-      {/* Footer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-        className="text-center mt-6 text-sm text-gray-500"
-      >
-        {(analysis || analysisError) && (
-          <div className="card mb-6 text-left max-h-[35vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold">AI Analysis</h4>
+      {/* AI Analysis Section */}
+      {(analysis || analysisError || loadingExplain) && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="mt-6"
+        >
+          <div className="card border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-indigo-200">
+              <div className="flex items-center space-x-2">
+                <div className="bg-indigo-600 p-2 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    AI Analysis & Insights
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    Detailed assessment by our AI system
+                  </p>
+                </div>
+              </div>
               {analysisError && (
                 <button
-                  className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                   onClick={async () => {
                     if (!applicationId) return;
                     setLoadingExplain(true);
@@ -490,26 +525,116 @@ const LoanResultCard = ({
                       setLoadingExplain(false);
                     }
                   }}
+                  className="text-xs px-3 py-1 rounded-full bg-white border border-indigo-300 text-indigo-600 hover:bg-indigo-100 font-medium transition"
                 >
                   Retry
                 </button>
               )}
             </div>
-            {analysis && (
-              <div className="prose max-w-none whitespace-pre-wrap text-gray-800 text-sm">
-                {analysis}
+
+            {/* Loading State */}
+            {loadingExplain && !analysis && (
+              <div className="py-8 text-center">
+                <div className="inline-block">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full"
+                  />
+                </div>
+                <p className="text-gray-600 text-sm mt-3">
+                  Analyzing your loan application...
+                </p>
               </div>
             )}
+
+            {/* Error State */}
             {analysisError && (
-              <div className="text-red-600 text-sm">{analysisError}</div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-left">
+                <p className="text-red-700 text-sm">
+                  <span className="font-semibold">Error: </span>
+                  {analysisError}
+                </p>
+              </div>
             )}
+
+            {/* Analysis Content */}
+            {analysis && !loadingExplain && (
+              <div className="space-y-4 text-left">
+                {/* Parse and display analysis in structured format */}
+                {(() => {
+                  const sections = analysis
+                    .split(/\n\n+/)
+                    .filter((s) => s.trim())
+                    .map((section) => {
+                      return section.trim();
+                    });
+
+                  return sections.map((section, idx) => {
+                    // Parse structured sections
+                    if (section.includes(":") && !section.includes("\n")) {
+                      const [label, value] = section
+                        .split(":")
+                        .map((s) => s.trim());
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 * idx }}
+                          className="flex justify-between items-start bg-white rounded-lg p-3 border border-indigo-100"
+                        >
+                          <span className="text-gray-600 font-medium">
+                            {label}
+                          </span>
+                          <span className="text-gray-900 font-semibold text-right ml-2">
+                            {value}
+                          </span>
+                        </motion.div>
+                      );
+                    }
+
+                    // Multi-line section (prose)
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 * idx }}
+                        className="bg-white rounded-lg p-4 border border-indigo-100"
+                      >
+                        <p className="text-gray-800 leading-relaxed text-sm whitespace-pre-wrap">
+                          {section}
+                        </p>
+                      </motion.div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="mt-4 pt-4 border-t border-indigo-200">
+              <p className="text-xs text-gray-600 text-center">
+                💡 This assessment is based on AI analysis of your provided
+                information and credit profile. For final approval, please
+                consult with a loan officer.
+              </p>
+            </div>
           </div>
-        )}
+        </motion.div>
+      )}
+
+      {/* Bottom note */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8 }}
+        className="text-center mt-6 text-sm text-gray-500"
+      >
         <p>
-          This assessment is based on AI analysis of your provided information.
-        </p>
-        <p className="mt-1">
-          For final approval, please consult with a loan officer.
+          Your assessment is complete. Review your results and download the
+          report for your records.
         </p>
       </motion.div>
     </motion.div>
