@@ -482,20 +482,32 @@ const LoanResultCard = ({
         </motion.div>
       )}
 
-      {/* Footer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-        className="text-center mt-6 text-sm text-gray-500"
-      >
-        {(analysis || analysisError) && (
-          <div className="card mb-6 text-left max-h-[35vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold text-primary-600">AI Analysis</h4>
+      {/* AI Analysis Section */}
+      {(analysis || analysisError || loadingExplain) && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="mt-6"
+        >
+          <div className="card border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-indigo-200">
+              <div className="flex items-center space-x-2">
+                <div className="bg-indigo-600 p-2 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    AI Analysis & Insights
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    Detailed assessment by our AI system
+                  </p>
+                </div>
+              </div>
               {analysisError && (
                 <button
-                  className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                   onClick={async () => {
                     if (!applicationId) return;
                     setLoadingExplain(true);
@@ -513,35 +525,116 @@ const LoanResultCard = ({
                       setLoadingExplain(false);
                     }
                   }}
+                  className="text-xs px-3 py-1 rounded-full bg-white border border-indigo-300 text-indigo-600 hover:bg-indigo-100 font-medium transition"
                 >
                   Retry
                 </button>
               )}
             </div>
-            {analysis && (
-              <div className="prose max-w-none whitespace-pre-wrap text-blue-700 text-sm">
-                {/* Highlight 'Let's start with the basics. Here's the first question:' and 'What is your full name?' if present */}
-                {analysis.split('\n').map((line, idx) => {
-                  if (line.includes("Let's start with the basics")) {
-                    return <span key={idx} className="text-primary-600 font-semibold">{line}</span>;
-                  }
-                  if (line.includes("What is your full name?")) {
-                    return <span key={idx} className="text-secondary-600 font-semibold">{line}</span>;
-                  }
-                  return <span key={idx}>{line}</span>;
-                })}
+
+            {/* Loading State */}
+            {loadingExplain && !analysis && (
+              <div className="py-8 text-center">
+                <div className="inline-block">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full"
+                  />
+                </div>
+                <p className="text-gray-600 text-sm mt-3">
+                  Analyzing your loan application...
+                </p>
               </div>
             )}
+
+            {/* Error State */}
             {analysisError && (
-              <div className="text-red-600 text-sm">{analysisError}</div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-left">
+                <p className="text-red-700 text-sm">
+                  <span className="font-semibold">Error: </span>
+                  {analysisError}
+                </p>
+              </div>
             )}
+
+            {/* Analysis Content */}
+            {analysis && !loadingExplain && (
+              <div className="space-y-4 text-left">
+                {/* Parse and display analysis in structured format */}
+                {(() => {
+                  const sections = analysis
+                    .split(/\n\n+/)
+                    .filter((s) => s.trim())
+                    .map((section) => {
+                      return section.trim();
+                    });
+
+                  return sections.map((section, idx) => {
+                    // Parse structured sections
+                    if (section.includes(":") && !section.includes("\n")) {
+                      const [label, value] = section
+                        .split(":")
+                        .map((s) => s.trim());
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 * idx }}
+                          className="flex justify-between items-start bg-white rounded-lg p-3 border border-indigo-100"
+                        >
+                          <span className="text-gray-600 font-medium">
+                            {label}
+                          </span>
+                          <span className="text-gray-900 font-semibold text-right ml-2">
+                            {value}
+                          </span>
+                        </motion.div>
+                      );
+                    }
+
+                    // Multi-line section (prose)
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 * idx }}
+                        className="bg-white rounded-lg p-4 border border-indigo-100"
+                      >
+                        <p className="text-gray-800 leading-relaxed text-sm whitespace-pre-wrap">
+                          {section}
+                        </p>
+                      </motion.div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="mt-4 pt-4 border-t border-indigo-200">
+              <p className="text-xs text-gray-600 text-center">
+                💡 This assessment is based on AI analysis of your provided
+                information and credit profile. For final approval, please
+                consult with a loan officer.
+              </p>
+            </div>
           </div>
-        )}
+        </motion.div>
+      )}
+
+      {/* Bottom note */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8 }}
+        className="text-center mt-6 text-sm text-gray-500"
+      >
         <p>
-          This assessment is based on AI analysis of your provided information.
-        </p>
-        <p className="mt-1">
-          For final approval, please consult with a loan officer.
+          Your assessment is complete. Review your results and download the
+          report for your records.
         </p>
       </motion.div>
     </motion.div>
