@@ -35,7 +35,7 @@ import ProjectOverview from "./pages/ProjectOverview";
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 
 // Voice agent
-import VoiceAgentRealtime_v2 from "./components/VoiceAgentRealtime_v2";
+import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtime_v2";
 
 // Utils
 import { auth } from "./utils/auth";
@@ -201,7 +201,7 @@ export default function App() {
           />
 
           {/* Voice agent (if needed) */}
-          <Route path="/voice-agent" element={<VoiceAgentRealtime_v2 />} />
+          <Route path="/voice-agent" element={<VoiceAgentRealtimeV2 />} />
         </Routes>
 
         <ToastContainer position="top-right" autoClose={4000} />

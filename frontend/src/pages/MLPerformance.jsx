@@ -2,8 +2,6 @@
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
-  PieChart,
-  Pie,
   Cell,
   BarChart,
   Bar,
@@ -44,15 +42,21 @@ function MLPerformance() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
           <p className="text-sm font-semibold mb-1">Accuracy</p>
-          <p className="text-2xl font-bold">{(metrics.accuracy * 100).toFixed(2)}%</p>
+          <p className="text-2xl font-bold">
+            {(metrics.accuracy * 100).toFixed(2)}%
+          </p>
         </div>
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
           <p className="text-sm font-semibold mb-1">Precision</p>
-          <p className="text-2xl font-bold">{(metrics.precision * 100).toFixed(2)}%</p>
+          <p className="text-2xl font-bold">
+            {(metrics.precision * 100).toFixed(2)}%
+          </p>
         </div>
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
           <p className="text-sm font-semibold mb-1">Recall</p>
-          <p className="text-2xl font-bold">{(metrics.recall * 100).toFixed(2)}%</p>
+          <p className="text-2xl font-bold">
+            {(metrics.recall * 100).toFixed(2)}%
+          </p>
         </div>
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
           <p className="text-sm font-semibold mb-1">F1 Score</p>
@@ -74,7 +78,10 @@ function MLPerformance() {
               <Tooltip />
               <Bar dataKey="value" fill="#3b82f6">
                 {(metrics.confusionMatrix || []).map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
                 ))}
               </Bar>
             </BarChart>
