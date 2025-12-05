@@ -23,6 +23,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Phone, PhoneOff, Volume2, VolumeX, X } from 'lucide-react';
 import FileUpload from './FileUpload';
+import LoanResultCard from './LoanResultCard';
 import { toast } from 'react-toastify';
 
 const VoiceAgentRealtime = () => {
@@ -506,6 +507,24 @@ const VoiceAgentRealtime = () => {
 
         </div>
       </div>
+
+      {/* Result Card */}
+      {eligibilityResult && (
+        <div className="mt-6 w-full max-w-2xl">
+          <LoanResultCard
+            result={{
+              eligibility_status: eligibilityResult.eligible ? "eligible" : "ineligible",
+              eligibility_score: eligibilityResult.score || 0,
+              risk_level: eligibilityResult.score > 0.7 ? "low_risk" : "medium_risk",
+              credit_tier: "Good", // Placeholder
+              confidence: 0.9
+            }}
+            applicationId={eligibilityResult.application_id}
+            extractedData={extractedData}
+          />
+        </div>
+      )}
+
       {/* Document Upload Modal */}
       {showDocumentUpload && (
         <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">

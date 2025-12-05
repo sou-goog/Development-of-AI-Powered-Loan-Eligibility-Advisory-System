@@ -30,9 +30,28 @@ function Login() {
       }
     } catch (err) {
       console.error("Login failed", err);
-      setError(
-        err.response?.data?.detail || "Invalid email or password. Try again."
-      );
+      const detail = err.response?.data?.detail;
+      let msg = "Invalid email or password. Try again.";
+
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation error list
+        const firstError = detail[0];
+        if (firstError?.msg) {
+          msg = firstError.msg;
+          if (firstError.loc) {
+            const field = firstError.loc[firstError.loc.length - 1];
+            msg = `${field}: ${msg}`;
+          }
+        } else {
+          msg = JSON.stringify(detail);
+        }
+      } else if (detail) {
+        msg = JSON.stringify(detail);
+      }
+
+      setError(msg);
     }
   };
 

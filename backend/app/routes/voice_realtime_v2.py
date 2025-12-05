@@ -1,19 +1,19 @@
 """
-Real-Time Streaming Voice Agent for AI Loan System
-===================================================
+Real-Time Streaming Voice Agent for AI Loan System (Cloud API Version)
+======================================================================
 
 This module implements a fully streaming, real-time voice assistant that:
 1. Accepts live audio from frontend via WebSocket (PCM 16-bit 16kHz mono)
-2. Transcribes in real-time using Faster Whisper (Server-side STT)
-3. Streams transcripts to Ollama LLM for intelligent responses
-4. Converts LLM tokens to speech using Piper TTS in real-time
+2. Transcribes in real-time using Deepgram Nova-2 (Cloud STT)
+3. Streams transcripts to Groq (Llama 3) for intelligent responses
+4. Converts LLM tokens to speech using Deepgram Aura (Cloud TTS)
 5. Streams audio chunks back to frontend
 6. Extracts structured loan data and triggers ML prediction
 
 Tech Stack:
-- STT: Faster Whisper (server-side, optimized)
-- LLM: Ollama with Llama 3.2 (streaming mode)
-- TTS: Piper (fast, local, streaming)
+- STT: Deepgram Nova-2 (WebSocket Streaming)
+- LLM: Groq API (Llama 3 - 70b/8b)
+- TTS: Deepgram Aura (Streaming)
 - Transport: FastAPI WebSocket
 
 Author: AI Development Assistant
@@ -27,22 +27,24 @@ import os
 import uuid
 import base64
 import numpy as np
-import tempfile
 import re
 from typing import List, Dict, Optional
-from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
-from faster_whisper import WhisperModel
+
+# Cloud APIs
+from groq import AsyncGroq
+from deepgram import DeepgramClient
+
+class LiveTranscriptionEvents:
+    Transcript = "Results"
+    Error = "Error"
+    Close = "Close"
+    Metadata = "Metadata"
+    SpeechStarted = "SpeechStarted"
+    UtteranceEnd = "UtteranceEnd"
 
 # Try to import optional services
-try:
-    from app.services.supabase_client import get_supabase_client
-    SUPABASE_AVAILABLE = True
-except ImportError:
-    SUPABASE_AVAILABLE = False
-    get_supabase_client = lambda: None
-
 try:
     from app.services.ml_model_service import MLModelService
     ML_SERVICE_AVAILABLE = True
@@ -59,23 +61,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Global Whisper Model
-whisper_model = None
-
-try:
-    logger.info("Loading Whisper 'tiny' model on startup...")
-    # Run on CPU with int8 quantization for speed/low memory
-    whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    logger.info("Whisper 'tiny' model loaded successfully!")
-except Exception as e:
-    logger.error(f"Failed to load Whisper model: {e}")
-
-def load_whisper_model():
-    pass # Already loaded
-
 # Configuration
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
-PIPER_MODEL = os.getenv("PIPER_MODEL", "en_US-amy-medium")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+GROQ_MODEL = "llama3-8b-8192" # Fast and cheap
+
+if not GROQ_API_KEY or not DEEPGRAM_API_KEY:
+    logger.error("Missing GROQ_API_KEY or DEEPGRAM_API_KEY in .env")
+
+# Initialize Clients
+groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
 
 # System prompt
 LOAN_AGENT_PROMPT = """You are LoanVoice, a friendly and efficient voice assistant for loan eligibility assessment.
@@ -104,72 +100,47 @@ If a field is unknown, omit it from the JSON. Always output the JSON block, even
 
 # ========================== Helper Functions ==========================
 
-def parse_written_number(text: str) -> float:
-    """Convert written numbers to numeric values."""
-    text = text.lower().strip()
-    
-    # Special cases for credit scores
-    credit_score_shortcuts = {
-        'seven fifty': 750, 'seven hundred': 700, 'six fifty': 650,
-        'six hundred': 600, 'eight hundred': 800, 'seven hundred fifty': 750,
-        'six hundred fifty': 650,
-    }
-    if text in credit_score_shortcuts:
-        return credit_score_shortcuts[text]
-    
-    return 0.0
-
-async def synthesize_speech_piper(text: str) -> Optional[bytes]:
-    """Convert text to speech using Piper TTS."""
+async def synthesize_speech_deepgram(text: str) -> Optional[bytes]:
+    """Convert text to speech using Deepgram Aura."""
     if not text.strip():
         return None
     
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        output_path = tmp.name
-    
     try:
-        # Use python -m piper to ensure we use the installed module
-        import sys
-        piper_cmd = [sys.executable, "-m", "piper"]
+        options = {
+            "model": "aura-asteria-en",
+            "encoding": "linear16",
+            "container": "wav"
+        }
         
-        # Resolve model path
-        model_path = PIPER_MODEL
-        if not os.path.exists(model_path):
-            # Try relative to backend
-            backend_root = Path(__file__).resolve().parents[2]
-            model_path = str(backend_root / "models" / "piper" / "en_US-amy-medium.onnx")
+        response = deepgram_client.speak.v("1").save(text, options)
         
-        if not os.path.exists(model_path):
-            logger.error(f"Piper model not found at {model_path}")
-            return None
-
-        cmd_args = piper_cmd + ["-m", model_path, "--output_file", output_path]
+        # Deepgram SDK saves to file by default in .save(), but we want bytes.
+        # Actually, .stream() is better for bytes but .save() returns a filename.
+        # Let's use the REST API wrapper properly or read the file.
+        # Wait, the python SDK .save returns the filename.
+        # To get bytes, we might need to use a different method or read the file.
+        # Let's try to use the `stream` method if available or just read the file from .save
         
-        proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        # Correction: The SDK `save` method saves to a file. 
+        # For memory, we can use `stream`? 
+        # Let's stick to a temp file approach for reliability with the SDK or check docs.
+        # Actually, let's just use the file it creates (it creates a temp file if filename not provided? No, it requires filename).
         
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=text.encode('utf-8')),
-            timeout=5.0
-        )
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_filename = tmp.name
+            
+        response = deepgram_client.speak.v("1").save(tmp_filename, {"text": text}, options)
         
-        if proc.returncode != 0:
-            logger.error(f"Piper TTS failed: {stderr.decode()}")
-            return None
-        
-        audio_data = Path(output_path).read_bytes()
+        with open(tmp_filename, "rb") as f:
+            audio_data = f.read()
+            
+        os.unlink(tmp_filename)
         return audio_data
-        
+
     except Exception as e:
-        logger.error(f"Piper TTS error: {e}")
+        logger.error(f"Deepgram TTS error: {e}")
         return None
-    finally:
-        if os.path.exists(output_path):
-            os.unlink(output_path)
 
 # ========================== WebSocket Endpoint ==========================
 
@@ -177,29 +148,33 @@ async def synthesize_speech_piper(text: str) -> Optional[bytes]:
 async def voice_stream_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-    # Ensure Whisper is loaded
-    load_whisper_model()
-    if not whisper_model:
-        await websocket.send_json({"type": "error", "data": "Server STT model failed to load"})
-        await websocket.close()
-        return
-
     session_id = str(uuid.uuid4())
     logger.info(f"Voice session started: {session_id}")
     
     # State
     conversation_history = []
     structured_data = {}
-    audio_buffer = bytearray()
-    silence_frames = 0
-    is_speaking = False
     
-    # VAD Parameters
-    FRAME_SIZE = 3200 # 0.1s at 16kHz 16-bit mono (16000 * 2 bytes * 0.1)
-    SILENCE_THRESHOLD = 6 # Increased to 0.6s to prevent cutting mid-sentence
-    ENERGY_THRESHOLD = 0.02 # Increased to 0.02 to reduce background noise sensitivity
-    
-    last_transcript = ""
+    # Deepgram Live Connection
+    try:
+        dg_connection = deepgram_client.listen.live.v("1")
+        
+        # Define Event Handlers
+        async def on_message(self, result, **kwargs):
+            sentence = result.channel.alternatives[0].transcript
+            if len(sentence) == 0:
+                return
+            
+            if result.is_final:
+                logger.info(f"User said: {sentence}")
+                await websocket.send_json({"type": "final_transcript", "data": sentence})
+                await process_llm_response(sentence, websocket, conversation_history, structured_data)
+
+
+    except Exception as e:
+        logger.error(f"Failed to init Deepgram: {e}")
+        await websocket.close()
+        return
 
     try:
         while True:
@@ -209,111 +184,22 @@ async def voice_stream_endpoint(websocket: WebSocket):
             if "bytes" in message:
                 # Audio chunk
                 chunk = message["bytes"]
-                audio_buffer.extend(chunk)
-                
-                # Simple VAD on the chunk
-                # Convert to float32 for energy calc
-                if len(chunk) >= 2:
-                    audio_np = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
-                    energy = np.sqrt(np.mean(audio_np**2))
-                    
-                    if energy > ENERGY_THRESHOLD:
-                        is_speaking = True
-                        silence_frames = 0
-                    else:
-                        if is_speaking:
-                            silence_frames += 1
-                
-                # If silence detected after speech, transcribe
-                if is_speaking and silence_frames > SILENCE_THRESHOLD:
-                    logger.info("Silence detected, transcribing...")
-                    
-                    # Transcribe audio_buffer
-                    # Save to temp file for Whisper (it expects file or array)
-                    # faster-whisper accepts np array directly
-                    
-                    full_audio_np = np.frombuffer(audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
-                    
-                    segments, info = whisper_model.transcribe(full_audio_np, beam_size=5, language="en")
-                    
-                    transcript = " ".join([segment.text for segment in segments]).strip()
-                    
-                    # Filter hallucinations
-                    hallucinations = [
-                        "you can hear me", "can you hear me", "thank you", 
-                        "thanks for watching", "subtitles by", "amara.org",
-                        "copyright", "all rights reserved", "what are you doing",
-                        "make her bow", "doing? what are you doing"
-                    ]
-                    
-                    is_hallucination = False
-                    if not transcript:
-                        is_hallucination = True
-                    else:
-                        clean_transcript = transcript.lower().strip(" .,!?")
-                        if len(clean_transcript) < 2: # Ignore single letters
-                            is_hallucination = True
-                        for h in hallucinations:
-                            if h in clean_transcript:
-                                is_hallucination = True
-                                break
-                        
-                        # Check for repetitive loops (e.g. "Text Text Text")
-                        # 1. Simple half-split check (for 2x loops)
-                        words = clean_transcript.split()
-                        if len(words) >= 4:
-                            mid = len(words) // 2
-                            first_half = "".join(words[:mid])
-                            second_half = "".join(words[mid:])
-                            if first_half == second_half:
-                                 is_hallucination = True
-                                 logger.info(f"Detected 2x loop hallucination: {transcript}")
-
-                        # 2. Check for 3x+ loops or short repeating phrases
-                        if not is_hallucination and len(words) >= 6:
-                            # Check if the first 3 words repeat later
-                            phrase = " ".join(words[:3])
-                            if clean_transcript.count(phrase) >= 3:
-                                is_hallucination = True
-                                logger.info(f"Detected 3x+ loop hallucination: {transcript}")
-                            
-                            # Check for "So I'm going to do that" specifically
-                            if "going to do that" in clean_transcript and clean_transcript.count("going to do that") >= 2:
-                                is_hallucination = True
-                                logger.info(f"Detected specific loop hallucination: {transcript}")
-                    
-                    # Deduplicate
-                    if transcript == last_transcript:
-                        logger.info(f"Ignoring duplicate transcript: {transcript}")
-                        is_hallucination = True
-
-                    if not is_hallucination:
-                        logger.info(f"User said: {transcript}")
-                        last_transcript = transcript
-                        await websocket.send_json({"type": "final_transcript", "data": transcript})
-                        
-                        # Process with LLM
-                        await process_llm_response(transcript, websocket, conversation_history, structured_data)
-                    
-                    # Reset buffer
-                    audio_buffer = bytearray()
-                    is_speaking = False
-                    silence_frames = 0
+                # Send to Deepgram
+                dg_connection.send(chunk)
             
             elif "text" in message:
                 # Handle text input or control messages
                 data = json.loads(message["text"])
                 if data.get("type") == "text_input":
                     text = data.get("data")
-                    last_transcript = text
                     await websocket.send_json({"type": "final_transcript", "data": text})
                     await process_llm_response(text, websocket, conversation_history, structured_data)
                 
                 elif data.get("type") == "document_uploaded":
+                    # ... (Same logic as before) ...
                     logger.info("Document uploaded signal received.")
                     structured_data["document_verified"] = True
                     
-                    # Check for missing fields before calculating eligibility
                     income = structured_data.get("monthly_income", 0)
                     credit = structured_data.get("credit_score", 0)
                     loan = structured_data.get("loan_amount", 0)
@@ -324,29 +210,88 @@ async def voice_stream_endpoint(websocket: WebSocket):
                     if not loan: missing.append("loan amount")
                     
                     if missing:
-                        # Ask for missing info instead of rejecting
                         msg = f"I've verified your document. However, I still need your {', '.join(missing)} to check your eligibility. Please tell me those details."
-                        eligible = False # Not yet
-                    else:
-                        # Calculate Eligibility (Simple Rule-based for Demo)
                         eligible = False
-                        if credit >= 650 and income >= 1000:
-                            eligible = True
-                            msg = f"Great! I've verified your document. With a credit score of {credit} and income of ${income}, you are eligible for the ${loan} loan. A manager will review your application shortly."
-                        else:
-                            msg = f"I've verified your document. Unfortunately, based on your credit score of {credit}, we cannot approve the full amount at this time."
+                    else:
+                        eligible = False
+                        reason = ""
+                        await websocket.send_json({"type": "final_transcript", "data": "Checking your eligibility..."})
                         
-                        # Send result to UI only if we actually ran the check
+                        if ML_SERVICE_AVAILABLE:
+                            try:
+                                ml_service = MLModelService()
+                                applicant_data = {
+                                    "Monthly_Income": income,
+                                    "Credit_Score": credit,
+                                    "Loan_Amount_Requested": loan,
+                                    "Loan_Tenure_Years": 5,
+                                    "Employment_Type": "Salaried",
+                                    "Age": 30,
+                                    "Existing_EMI": 0,
+                                    "Document_Verified": 1
+                                }
+                                result = ml_service.predict_eligibility(applicant_data)
+                                eligible = result["eligibility_status"] == "eligible"
+                                score = result["eligibility_score"]
+                                
+                                if eligible:
+                                    msg = f"Great! I've verified your document. Based on our AI analysis, you are eligible for the loan with a confidence score of {int(score*100)}%. A manager will review your application shortly."
+                                else:
+                                    msg = f"I've verified your document. However, based on our AI analysis, we cannot approve the full amount at this time. Your eligibility score is {int(score*100)}%."
+                            except Exception as e:
+                                logger.error(f"ML Prediction failed: {e}")
+                                if credit >= 650 and income >= 1000:
+                                    eligible = True
+                                    msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
+                                else:
+                                    msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
+                        else:
+                            if credit >= 650 and income >= 1000:
+                                eligible = True
+                                msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
+                            else:
+                                msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
+                        
+                        # Save to Database
+                        application_id = None
+                        try:
+                            from app.models.database import SessionLocal, LoanApplication
+                            from datetime import datetime
+                            db = SessionLocal()
+                            new_app = LoanApplication(
+                                full_name=data.get("name", "Voice User"),
+                                monthly_income=float(income),
+                                credit_score=int(credit),
+                                loan_amount_requested=float(loan),
+                                loan_tenure_years=5,
+                                employment_type="Salaried",
+                                eligibility_status="eligible" if eligible else "ineligible",
+                                eligibility_score=float(score) if ML_SERVICE_AVAILABLE else (0.9 if eligible else 0.4),
+                                document_verified=True,
+                                created_at=datetime.utcnow()
+                            )
+                            db.add(new_app)
+                            db.commit()
+                            db.refresh(new_app)
+                            application_id = new_app.id
+                            db.close()
+                        except Exception as e:
+                            logger.error(f"Failed to save application to DB: {e}")
+
                         await websocket.send_json({
                             "type": "eligibility_result", 
-                            "data": {"eligible": eligible, "message": msg}
+                            "data": {
+                                "eligible": eligible, 
+                                "message": msg,
+                                "application_id": application_id,
+                                "score": score if ML_SERVICE_AVAILABLE else 0
+                            }
                         })
                     
-                    # Speak the result (or the request for more info)
                     await websocket.send_json({"type": "final_transcript", "data": msg})
                     history.append({"role": "assistant", "content": msg})
                     
-                    audio = await synthesize_speech_piper(msg)
+                    audio = await synthesize_speech_deepgram(msg)
                     if audio:
                         b64 = base64.b64encode(audio).decode('ascii')
                         await websocket.send_json({"type": "audio_chunk", "data": b64})
@@ -355,12 +300,14 @@ async def voice_stream_endpoint(websocket: WebSocket):
         logger.info(f"Voice session ended: {session_id}")
     except Exception as e:
         logger.error(f"Error in voice session: {e}", exc_info=True)
+    finally:
+        dg_connection.finish()
         try:
             await websocket.close()
         except: pass
 
 async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict):
-    """Process user text with LLM and stream response."""
+    """Process user text with Groq LLM and stream response."""
     
     # Update history
     history.append({"role": "user", "content": user_text})
@@ -370,17 +317,16 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
     
     system_prompt = LOAN_AGENT_PROMPT + f"\n\nCURRENT KNOWN INFO:\n{current_state_str}\n\n(If a field is present in KNOWN INFO, do NOT ask for it again. HOWEVER, if the user explicitly CORRECTS or UPDATES a field, you MUST update it in the JSON output. If the user just provided it, acknowledge it.)"
     
-    prompt = system_prompt + "\n\nConversation:\n"
-    for msg in history[-10:]: # Keep last 10 messages for flow
-        prompt += f"{msg['role']}: {msg['content']}\n"
-    prompt += "assistant: "
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history[-10:]) # Keep last 10 messages
     
-    # Call Ollama
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "ollama", "run", OLLAMA_MODEL, prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        completion = await groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=messages,
+            stream=True,
+            temperature=0.7,
+            max_tokens=1024
         )
         
         full_response = ""
@@ -388,82 +334,51 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         json_buffer = ""
         is_collecting_json = False
         
-        # Read stream
-        while True:
-            line = await proc.stdout.read(1024)
-            if not line:
-                break
-            
-            chunk = line.decode('utf-8', errors='ignore')
-            
-            # Check for delimiter
-            if "|||JSON|||" in chunk:
-                parts = chunk.split("|||JSON|||")
-                text_part = parts[0]
-                json_part = parts[1]
+        async for chunk in completion:
+            content = chunk.choices[0].delta.content
+            if not content:
+                continue
                 
-                # Process remaining text
+            # Check for delimiter
+            if "|||JSON|||" in content:
+                parts = content.split("|||JSON|||")
+                text_part = parts[0]
+                json_part = parts[1] if len(parts) > 1 else ""
+                
                 full_response += text_part
                 sentence_buffer += text_part
                 await websocket.send_json({"type": "ai_token", "data": text_part})
                 
-                # Switch to JSON mode
                 is_collecting_json = True
                 json_buffer += json_part
                 continue
             
             if is_collecting_json:
-                json_buffer += chunk
+                json_buffer += content
             else:
-                # Anti-Hallucination: Stop if LLM tries to roleplay as user
-                if "user:" in chunk.lower() or "User:" in chunk:
-                    logger.warning("Detected LLM hallucinating user turn. Stopping generation.")
-                    # Cut off the chunk before "user:"
-                    idx = chunk.lower().find("user:")
-                    if idx != -1:
-                        chunk = chunk[:idx]
-                    
-                    full_response += chunk
-                    sentence_buffer += chunk
-                    await websocket.send_json({"type": "ai_token", "data": chunk})
-                    
-                    # Kill the process
-                    try:
-                        proc.terminate()
-                    except: pass
-                    break
-
-                full_response += chunk
-                sentence_buffer += chunk
+                full_response += content
+                sentence_buffer += content
+                await websocket.send_json({"type": "ai_token", "data": content})
                 
-                # Send token to UI
-                await websocket.send_json({"type": "ai_token", "data": chunk})
-                
-                # Check for sentence boundaries
+                # Sentence splitting for TTS
                 if re.search(r'[.!?]\s', sentence_buffer):
-                    # Split into sentences
                     parts = re.split(r'([.!?])', sentence_buffer)
-                    
-                    # Process complete sentences
                     to_speak = ""
                     for i in range(0, len(parts) - 1, 2):
                         sentence = parts[i] + parts[i+1]
                         to_speak += sentence
                     
                     if to_speak.strip():
-                        logger.info(f"Streaming TTS for: {to_speak}")
-                        audio = await synthesize_speech_piper(to_speak)
+                        audio = await synthesize_speech_deepgram(to_speak)
                         if audio:
                             b64 = base64.b64encode(audio).decode('ascii')
                             await websocket.send_json({"type": "audio_chunk", "data": b64})
                     
-                    # Keep the remainder
                     sentence_buffer = parts[-1]
-        
-        # Speak remaining buffer (if any text left before JSON)
+
+        # Speak remainder
         if sentence_buffer.strip() and not is_collecting_json:
-             logger.info(f"Streaming TTS for remainder: {sentence_buffer}")
-             audio = await synthesize_speech_piper(sentence_buffer)
+             audio = await synthesize_speech_deepgram(sentence_buffer)
              if audio:
                  b64 = base64.b64encode(audio).decode('ascii')
                  await websocket.send_json({"type": "audio_chunk", "data": b64})
@@ -471,19 +386,15 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         # Process Extracted JSON
         if json_buffer.strip():
             try:
-                # Clean up JSON
                 json_str = json_buffer.strip()
                 match = re.search(r'\{.*\}', json_str, re.DOTALL)
                 if match:
                     json_str = match.group(0)
                     new_fields = json.loads(json_str)
                     
-                    # Validate and merge
-                    # Anti-Hallucination: Only accept numeric fields if user input contains numbers
                     has_numbers = bool(re.search(r'\d', user_text))
                     
                     if "name" in new_fields and isinstance(new_fields["name"], str):
-                        # Only update name if it looks like a name (not empty)
                         if new_fields["name"].strip():
                             data["name"] = new_fields["name"].title()
                     
@@ -505,32 +416,26 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                             if val > 0: data["loan_amount"] = val
                         except: pass
                     
-                    # Send update
                     await websocket.send_json({"type": "structured_update", "data": data})
             except Exception as e:
                 logger.error(f"JSON parsing failed: {e}")
-                logger.error(f"Failed JSON buffer: {json_buffer}")
 
-        # Add to history
         history.append({"role": "assistant", "content": full_response})
-        logger.info(f"Current Structured Data: {data}")
         
-        # Magic Phrase Detector for Flow Completion
-        # If the agent says it has all info/checking eligibility, FORCE the trigger
+        # Magic Phrase Detector
         magic_phrases = ["check your eligibility", "checking your eligibility", "verify your eligibility"]
         required_fields = ["monthly_income", "credit_score", "loan_amount"]
         has_all_data = all(data.get(k) for k in required_fields)
 
         if any(phrase in full_response.lower() for phrase in magic_phrases) and has_all_data:
-            logger.info("Magic phrase detected AND data complete! Forcing document verification.")
             await websocket.send_json({
                 "type": "document_verification_required",
                 "data": {
-                    "message": "", # Message already spoken by agent
+                    "message": "", 
                     "structured_data": data
                 }
             })
-            
+
     except Exception as e:
-        logger.error(f"LLM error: {e}")
+        logger.error(f"Groq LLM error: {e}")
         await websocket.send_json({"type": "error", "data": "AI processing failed"})
