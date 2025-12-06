@@ -11,7 +11,6 @@ import {
   CheckCircle,
   Phone,
   Mail,
-  CreditCard,
   Download,
 } from "lucide-react";
 import MiniChatbot from "./MiniChatbot";

@@ -18,7 +18,7 @@ const LoanResultCard = ({
   extractedData,
   applicationId,
 }) => {
-  const [loadingExplain, setLoadingExplain] = useState(false);
+  // const [loadingExplain, setLoadingExplain] = useState(false); // Removed unused variable
   const [analysis, setAnalysis] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
@@ -160,7 +160,6 @@ const LoanResultCard = ({
     let cancelled = false;
     async function run() {
       if (!applicationId || !result || analysis) return;
-      setLoadingExplain(true);
       setAnalysisError("");
       try {
         const { data } = await reportAPI.generateAnalysis(applicationId);
@@ -176,8 +175,6 @@ const LoanResultCard = ({
             e?.response?.data?.detail || e?.response?.data || e?.message || msg;
         } catch (__) {}
         if (!cancelled) setAnalysisError(String(msg));
-      } finally {
-        if (!cancelled) setLoadingExplain(false);
       }
     }
     run();
@@ -295,32 +292,11 @@ const LoanResultCard = ({
           {/* Actions */}
           <div className="mt-6 flex flex-wrap gap-3">
             <button
-              disabled={!applicationId || loadingExplain}
-              onClick={async () => {
+              disabled={!applicationId}
+              onClick={() => {
                 if (!applicationId) return;
-                setLoadingExplain(true);
-                try {
-                  const { data } = await reportAPI.generateAnalysis(
-                    applicationId
-                  );
-                  const analysisText =
-                    data?.analysis ?? JSON.stringify(data ?? {});
-                  setAnalysis(analysisText);
-                  setAnalysisError("");
-                } catch (e) {
-                  let msg =
-                    "Sorry, I'm having trouble responding right now. Please try again.";
-                  try {
-                    msg =
-                      e?.response?.data?.detail ||
-                      e?.response?.data ||
-                      e?.message ||
-                      msg;
-                  } catch (__) {}
-                  setAnalysisError(String(msg));
-                } finally {
-                  setLoadingExplain(false);
-                }
+                // Navigate to UserDashboard, passing applicationId and result
+                window.location.href = `/user-dashboard?applicationId=${encodeURIComponent(applicationId)}`;
               }}
               className="px-4 py-2 rounded-md bg-indigo-600 text-white disabled:opacity-60"
               title={
@@ -329,7 +305,7 @@ const LoanResultCard = ({
                   : "Explain the result with AI"
               }
             >
-              {loadingExplain ? "Generating analysis..." : "Explain with AI"}
+              {"Explain with AI"}
             </button>
 
             <button
@@ -498,7 +474,6 @@ const LoanResultCard = ({
                   className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
                   onClick={async () => {
                     if (!applicationId) return;
-                    setLoadingExplain(true);
                     setAnalysisError("");
                     try {
                       const { data } = await reportAPI.generateAnalysis(
@@ -509,8 +484,6 @@ const LoanResultCard = ({
                       setAnalysisError(
                         "Sorry, I'm having trouble responding right now. Please try again."
                       );
-                    } finally {
-                      setLoadingExplain(false);
                     }
                   }}
                 >

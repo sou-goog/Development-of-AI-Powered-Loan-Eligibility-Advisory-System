@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 import pickle
 from pathlib import Path
 
@@ -36,7 +38,7 @@ def create_synthetic_data(n_samples=1000):
     return df
 
 def train_model():
-    """Train XGBoost model"""
+    """Train XGBoost, Decision Tree, and Random Forest models"""
     print("🏦 Training Simple Loan Model for Voice Agent")
     print("=" * 50)
     
@@ -59,47 +61,67 @@ def train_model():
     
     print(f"\nTraining set: {X_train.shape}, Test set: {X_test.shape}")
     
-    # Train model
+    # Train XGBoost
     print("\n🤖 Training XGBoost model...")
-    model = xgb.XGBClassifier(
+    xgb_model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=4,
         learning_rate=0.1,
         random_state=42,
         eval_metric='logloss'
     )
-    
-    model.fit(X_train, y_train)
-    
-    # Evaluate
-    train_score = model.score(X_train, y_train)
-    test_score = model.score(X_test, y_test)
-    
+    xgb_model.fit(X_train, y_train)
+    xgb_train_score = xgb_model.score(X_train, y_train)
+    xgb_test_score = xgb_model.score(X_test, y_test)
+
+    # Train Decision Tree
+    print("\n🌳 Training Decision Tree model...")
+    dt_model = DecisionTreeClassifier(max_depth=5, random_state=42)
+    dt_model.fit(X_train, y_train)
+    dt_train_score = dt_model.score(X_train, y_train)
+    dt_test_score = dt_model.score(X_test, y_test)
+
+    # Train Random Forest
+    print("\n🌲 Training Random Forest model...")
+    rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+    rf_model.fit(X_train, y_train)
+    rf_train_score = rf_model.score(X_train, y_train)
+    rf_test_score = rf_model.score(X_test, y_test)
+
     print(f"\n📈 Model Performance:")
-    print(f"Training Accuracy: {train_score:.4f}")
-    print(f"Testing Accuracy: {test_score:.4f}")
-    
-    # Feature importance
-    print(f"\n🎯 Feature Importance:")
-    for feature, importance in zip(X.columns, model.feature_importances_):
-        print(f"  {feature}: {importance:.4f}")
-    
-    # Save model
+    print(f"XGBoost - Training: {xgb_train_score:.4f}, Testing: {xgb_test_score:.4f}")
+    print(f"Decision Tree - Training: {dt_train_score:.4f}, Testing: {dt_test_score:.4f}")
+    print(f"Random Forest - Training: {rf_train_score:.4f}, Testing: {rf_test_score:.4f}")
+
+    # Save models
     model_dir = Path("app/models")
     model_dir.mkdir(parents=True, exist_ok=True)
-    
-    model_path = model_dir / "loan_model.pkl"
-    with open(model_path, 'wb') as f:
-        pickle.dump(model, f)
-    
+
+    with open(model_dir / "loan_xgboost_model.pkl", 'wb') as f:
+        pickle.dump(xgb_model, f)
+    with open(model_dir / "loan_decision_tree_model.pkl", 'wb') as f:
+        pickle.dump(dt_model, f)
+    with open(model_dir / "loan_random_forest_model.pkl", 'wb') as f:
+        pickle.dump(rf_model, f)
+
     # Save column names
     columns_path = model_dir / "X_columns.pkl"
     with open(columns_path, 'wb') as f:
         pickle.dump(list(X.columns), f)
-    
-    print(f"\n✅ Model saved to {model_path}")
+
+    # Save accuracies for reference
+    accuracies = {
+        "xgboost": {"train": xgb_train_score, "test": xgb_test_score},
+        "decision_tree": {"train": dt_train_score, "test": dt_test_score},
+        "random_forest": {"train": rf_train_score, "test": rf_test_score},
+    }
+    with open(model_dir / "model_accuracies.pkl", 'wb') as f:
+        pickle.dump(accuracies, f)
+
+    print(f"\n✅ Models saved to {model_dir}")
     print(f"✅ Columns saved to {columns_path}")
-    
+    print(f"✅ Accuracies saved to {model_dir / 'model_accuracies.pkl'}")
+
     # Test prediction
     print(f"\n🧪 Testing prediction...")
     test_case = pd.DataFrame({
@@ -107,13 +129,13 @@ def train_model():
         'credit_score': [720],
         'loan_amount': [50000]
     })
-    
-    prob = model.predict_proba(test_case)[0][1]
-    print(f"Test case: Income=$5000, Credit=720, Loan=$50000")
-    print(f"Predicted probability: {prob:.2%}")
-    print(f"Result: {'✅ Eligible' if prob >= 0.5 else '❌ Ineligible'}")
-    
-    return model
+    for name, model in zip([
+        "XGBoost", "Decision Tree", "Random Forest"
+    ], [xgb_model, dt_model, rf_model]):
+        prob = model.predict_proba(test_case)[0][1]
+        print(f"{name} - Predicted probability: {prob:.2%} | Result: {'✅ Eligible' if prob >= 0.5 else '❌ Ineligible'}")
+
+    return xgb_model, dt_model, rf_model
 
 if __name__ == "__main__":
     try:

@@ -11,7 +11,9 @@ import {
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+
 import MainLayout from "./layout/MainLayout";
+import UserDashboard from "./pages/UserDashboard";
 
 // Pages
 import Home from "./pages/Home";
@@ -103,6 +105,23 @@ export default function App() {
             element={
               <ProtectedRoute requireManager={true}>
                 <Manager />
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* Public Dashboard route for sharing */}
+          <Route
+            path="/dashboard"
+            element={<UserDashboard />}
+          />
+
+          {/* User Dashboard route (protected, for logged-in users) */}
+          <Route
+            path="/user-dashboard"
+            element={
+              <ProtectedRoute>
+                <UserDashboard />
               </ProtectedRoute>
             }
           />

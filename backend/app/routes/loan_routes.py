@@ -318,14 +318,11 @@ async def predict_eligibility(request: LoanPredictionRequest):
             "Loan_to_Value_Ratio": request.Loan_to_Value_Ratio
         }
         
-        # Get prediction
+        # Get prediction (all models)
         prediction = ml_service.predict_eligibility(applicant_data)
-        
-        logger.info(f"Loan prediction generated: {prediction['eligibility_status']}")
-        
+        logger.info(f"Loan prediction generated: {prediction['models']}")
         return {
-            "eligibility_score": prediction["eligibility_score"],
-            "eligibility_status": prediction["eligibility_status"],
+            "models": prediction["models"],
             "risk_level": prediction["risk_level"],
             "recommendations": prediction["recommendations"],
             "credit_tier": prediction["credit_tier"],
@@ -418,12 +415,13 @@ async def predict_for_application(
         
         # Get prediction
         prediction = ml_service.predict_eligibility(applicant_data)
-        
-        # Update application
-        app.eligibility_score = prediction["eligibility_score"]
-        app.eligibility_status = prediction["eligibility_status"]
+
+        # Update application using XGBoost model results
+        xgb = prediction.get("models", {}).get("xgboost", {})
+        app.eligibility_score = xgb.get("eligibility_score")
+        app.eligibility_status = xgb.get("eligibility_status")
         db.commit()
-        
+
         # Auto-generate report after successful prediction
         try:
             report_service = ReportService()
@@ -456,8 +454,12 @@ async def predict_for_application(
             logger.warning(f"Report generation after prediction skipped: {rep_e}")
 
         logger.info(f"Prediction updated for application {application_id}")
-        
-        return prediction
+
+        # Return prediction and full_name for dashboard personalization
+        response = prediction.copy() if isinstance(prediction, dict) else {}
+        response["full_name"] = app.full_name
+        response["app_data"] = app_data
+        return response
     
     except HTTPException:
         raise
