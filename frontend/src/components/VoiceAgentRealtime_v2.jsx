@@ -155,7 +155,7 @@ const VoiceAgentRealtime = () => {
 
         // If AI was speaking, finalize its message now (user interrupted or AI finished)
         if (currentAiTokenRef.current) {
-          setFinalTranscripts(prev => [...prev, { role: 'assistant', text: currentAiTokenRef.current }]);
+          setFinalTranscripts(prev => [...prev, { role: 'assistant', text: currentAiTokenRef.current.split('|||JSON|||')[0] }]);
           currentAiTokenRef.current = '';
           setCurrentAiToken('');
         }
@@ -168,7 +168,7 @@ const VoiceAgentRealtime = () => {
 
         // If AI was speaking, finalize its message now
         if (currentAiTokenRef.current) {
-          setFinalTranscripts(prev => [...prev, { role: 'assistant', text: currentAiTokenRef.current }]);
+          setFinalTranscripts(prev => [...prev, { role: 'assistant', text: currentAiTokenRef.current.split('|||JSON|||')[0] }]);
           currentAiTokenRef.current = '';
           setCurrentAiToken('');
         }
@@ -178,7 +178,8 @@ const VoiceAgentRealtime = () => {
 
       case 'ai_token':
         currentAiTokenRef.current += data;
-        setCurrentAiToken(prev => prev + data);
+        // Filter out the hidden JSON data from the UI
+        setCurrentAiToken(currentAiTokenRef.current.split('|||JSON|||')[0]);
         break;
 
       case 'audio_chunk':
@@ -467,7 +468,7 @@ const VoiceAgentRealtime = () => {
             <input
               type="text"
               placeholder={isRecording ? "Listening..." : "Type a message..."}
-              className={`w-full pl-4 pr-10 py-3 rounded-full border-none focus:ring-2 transition-all shadow-sm text-base ${isRecording
+              className={`w-full pl-4 pr-10 py-3 rounded-full border-none focus:ring-2 transition-all shadow-sm text-base text-gray-900 ${isRecording
                 ? 'bg-red-50 ring-2 ring-red-100 placeholder-red-400'
                 : 'bg-gray-100 focus:bg-white focus:ring-blue-500'
                 }`}
@@ -477,7 +478,7 @@ const VoiceAgentRealtime = () => {
                   const text = e.target.value.trim();
                   if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(JSON.stringify({ type: 'text_input', data: text }));
-                    setFinalTranscripts(prev => [...prev, { role: 'user', text: text }]);
+                    // setFinalTranscripts(prev => [...prev, { role: 'user', text: text }]); // Removed to prevent duplication (backend echoes it)
                     e.target.value = '';
                   } else {
                     toast.error("Not connected");

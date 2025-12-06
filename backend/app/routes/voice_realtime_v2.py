@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 
 # Cloud APIs
 from groq import AsyncGroq
-from deepgram import DeepgramClient
+from deepgram import DeepgramClient, AsyncDeepgramClient
 
 class LiveTranscriptionEvents:
     Transcript = "Results"
@@ -64,14 +64,18 @@ router = APIRouter()
 # Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
-GROQ_MODEL = "llama3-8b-8192" # Fast and cheap
+# llama3-8b-8192 is deprecated. Using llama-3.3-70b-versatile for better performance/stability
+GROQ_MODEL = "llama-3.3-70b-versatile" 
 
 if not GROQ_API_KEY or not DEEPGRAM_API_KEY:
     logger.error("Missing GROQ_API_KEY or DEEPGRAM_API_KEY in .env")
 
 # Initialize Clients
 groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+# Sync client for TTS (legacy/fallback)
 deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+# Async client for Real-time STT streaming
+deepgram_client_async = AsyncDeepgramClient(api_key=DEEPGRAM_API_KEY)
 
 # System prompt
 LOAN_AGENT_PROMPT = """You are LoanVoice, a friendly and efficient voice assistant for loan eligibility assessment.
@@ -86,7 +90,7 @@ Your job:
 3. Respond in SHORT, natural sentences (max 15 words per sentence)
 4. Be conversational and empathetic
 5. When you extract information, acknowledge it
-6. Once all fields are collected, say "I have all the information. Let me check your eligibility."
+6. Once all fields are collected (Name, Income, Credit Score, Amount), you MUST IMMEDIATELY say "Checking to see if you are eligible..." to proceed. DO NOT ask the user "Should I check now?". Just do it.
 
 CRITICAL INSTRUCTION:
 At the very end of your response, you MUST append the extracted data in JSON format, separated by '|||JSON|||'.
@@ -112,25 +116,15 @@ async def synthesize_speech_deepgram(text: str) -> Optional[bytes]:
             "container": "wav"
         }
         
-        response = deepgram_client.speak.v("1").save(text, options)
-        
-        # Deepgram SDK saves to file by default in .save(), but we want bytes.
-        # Actually, .stream() is better for bytes but .save() returns a filename.
-        # Let's use the REST API wrapper properly or read the file.
-        # Wait, the python SDK .save returns the filename.
-        # To get bytes, we might need to use a different method or read the file.
-        # Let's try to use the `stream` method if available or just read the file from .save
-        
-        # Correction: The SDK `save` method saves to a file. 
-        # For memory, we can use `stream`? 
-        # Let's stick to a temp file approach for reliability with the SDK or check docs.
-        # Actually, let's just use the file it creates (it creates a temp file if filename not provided? No, it requires filename).
+        # Use synchronous client via run_in_executor if needed, but for now simple call is fine
+        # as it is network bound (requests). Ideally should be async, but SDK is sync here.
         
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp_filename = tmp.name
             
-        response = deepgram_client.speak.v("1").save(tmp_filename, {"text": text}, options)
+        # Call Sync Deepgram Client
+        response = deepgram_client.speak.v1.save(tmp_filename, {"text": text}, options)
         
         with open(tmp_filename, "rb") as f:
             audio_data = f.read()
@@ -157,8 +151,6 @@ async def voice_stream_endpoint(websocket: WebSocket):
     
     # Deepgram Live Connection
     try:
-        dg_connection = deepgram_client.listen.live.v("1")
-        
         # Define Event Handlers
         async def on_message(self, result, **kwargs):
             sentence = result.channel.alternatives[0].transcript
@@ -170,140 +162,169 @@ async def voice_stream_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "final_transcript", "data": sentence})
                 await process_llm_response(sentence, websocket, conversation_history, structured_data)
 
+        async def on_error(self, error, **kwargs):
+            logger.error(f"Deepgram Error: {error}")
 
-    except Exception as e:
-        logger.error(f"Failed to init Deepgram: {e}")
-        await websocket.close()
-        return
+        options = {
+            "model": "nova-2", 
+            "language": "en-US", 
+            "smart_format": True, 
+            "encoding": "linear16", 
+            "channels": 1, 
+            "sample_rate": 16000,
+            "interim_results": True,
+            "utterance_end_ms": 1000,
+            "vad_events": True,
+            "endpointing": 300
+        }
 
-    try:
-        while True:
-            # Receive message (bytes or text)
-            message = await websocket.receive()
+        # Initialize Deepgram Live Client (Async)
+        # Note: In SDK 5.3.0, use listen.v1.connect() with AsyncClient - verified in verify_deepgram.py
+        
+        logger.info("Connecting to Deepgram STT...")
+        async with deepgram_client_async.listen.v1.connect(**options) as dg_connection:
             
-            if "bytes" in message:
-                # Audio chunk
-                chunk = message["bytes"]
-                # Send to Deepgram
-                dg_connection.send(chunk)
+            # Event Handlers
+            dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
+            dg_connection.on(LiveTranscriptionEvents.Error, on_error)
+            dg_connection.on(LiveTranscriptionEvents.Close, lambda self, close, **kwargs: logger.info(f"Deepgram Connection Closed: {close}"))
+
+            logger.info("Deepgram STT Connected.")
             
-            elif "text" in message:
-                # Handle text input or control messages
-                data = json.loads(message["text"])
-                if data.get("type") == "text_input":
-                    text = data.get("data")
-                    await websocket.send_json({"type": "final_transcript", "data": text})
-                    await process_llm_response(text, websocket, conversation_history, structured_data)
-                
-                elif data.get("type") == "document_uploaded":
-                    # ... (Same logic as before) ...
-                    logger.info("Document uploaded signal received.")
-                    structured_data["document_verified"] = True
+            try:
+                while True:
+                    # Receive message (bytes or text)
+                    message = await websocket.receive()
                     
-                    income = structured_data.get("monthly_income", 0)
-                    credit = structured_data.get("credit_score", 0)
-                    loan = structured_data.get("loan_amount", 0)
+                    if "bytes" in message:
+                        # Audio chunk
+                        chunk = message["bytes"]
+                        # Send to Deepgram using Async Client method
+                        await dg_connection.send_media(chunk)
                     
-                    missing = []
-                    if not income: missing.append("monthly income")
-                    if not credit: missing.append("credit score")
-                    if not loan: missing.append("loan amount")
-                    
-                    if missing:
-                        msg = f"I've verified your document. However, I still need your {', '.join(missing)} to check your eligibility. Please tell me those details."
-                        eligible = False
-                    else:
-                        eligible = False
-                        reason = ""
-                        await websocket.send_json({"type": "final_transcript", "data": "Checking your eligibility..."})
+                    elif "text" in message:
+                        # Handle text input or control messages
+                        data_json = json.loads(message["text"])
+                        if data_json.get("type") == "text_input":
+                            text = data_json.get("data")
+                            await websocket.send_json({"type": "final_transcript", "data": text})
+                            await process_llm_response(text, websocket, conversation_history, structured_data)
                         
-                        if ML_SERVICE_AVAILABLE:
-                            try:
-                                ml_service = MLModelService()
-                                applicant_data = {
-                                    "Monthly_Income": income,
-                                    "Credit_Score": credit,
-                                    "Loan_Amount_Requested": loan,
-                                    "Loan_Tenure_Years": 5,
-                                    "Employment_Type": "Salaried",
-                                    "Age": 30,
-                                    "Existing_EMI": 0,
-                                    "Document_Verified": 1
-                                }
-                                result = ml_service.predict_eligibility(applicant_data)
-                                eligible = result["eligibility_status"] == "eligible"
-                                score = result["eligibility_score"]
-                                
-                                if eligible:
-                                    msg = f"Great! I've verified your document. Based on our AI analysis, you are eligible for the loan with a confidence score of {int(score*100)}%. A manager will review your application shortly."
-                                else:
-                                    msg = f"I've verified your document. However, based on our AI analysis, we cannot approve the full amount at this time. Your eligibility score is {int(score*100)}%."
-                            except Exception as e:
-                                logger.error(f"ML Prediction failed: {e}")
-                                if credit >= 650 and income >= 1000:
-                                    eligible = True
-                                    msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
-                                else:
-                                    msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
-                        else:
-                            if credit >= 650 and income >= 1000:
-                                eligible = True
-                                msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
+                        elif data_json.get("type") == "document_uploaded":
+                            # Logic for document upload and eligibility check
+                            logger.info("Document uploaded signal received.")
+                            structured_data["document_verified"] = True
+                            
+                            income = structured_data.get("monthly_income", 0)
+                            credit = structured_data.get("credit_score", 0)
+                            loan = structured_data.get("loan_amount", 0)
+                            
+                            missing = []
+                            if not income: missing.append("monthly income")
+                            if not credit: missing.append("credit score")
+                            if not loan: missing.append("loan amount")
+                            
+                            if missing:
+                                msg = f"I've verified your document. However, I still need your {', '.join(missing)} to check your eligibility. Please tell me those details."
+                                eligible = False
                             else:
-                                msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
-                        
-                        # Save to Database
-                        application_id = None
-                        try:
-                            from app.models.database import SessionLocal, LoanApplication
-                            from datetime import datetime
-                            db = SessionLocal()
-                            new_app = LoanApplication(
-                                full_name=data.get("name", "Voice User"),
-                                monthly_income=float(income),
-                                credit_score=int(credit),
-                                loan_amount_requested=float(loan),
-                                loan_tenure_years=5,
-                                employment_type="Salaried",
-                                eligibility_status="eligible" if eligible else "ineligible",
-                                eligibility_score=float(score) if ML_SERVICE_AVAILABLE else (0.9 if eligible else 0.4),
-                                document_verified=True,
-                                created_at=datetime.utcnow()
-                            )
-                            db.add(new_app)
-                            db.commit()
-                            db.refresh(new_app)
-                            application_id = new_app.id
-                            db.close()
-                        except Exception as e:
-                            logger.error(f"Failed to save application to DB: {e}")
+                                eligible = False
+                                reason = ""
+                                await websocket.send_json({"type": "final_transcript", "data": "Checking your eligibility..."})
+                                
+                                if ML_SERVICE_AVAILABLE:
+                                    try:
+                                        ml_service = MLModelService()
+                                        applicant_data = {
+                                            "Monthly_Income": income,
+                                            "Credit_Score": credit,
+                                            "Loan_Amount_Requested": loan,
+                                            "Loan_Tenure_Years": 5,
+                                            "Employment_Type": "Salaried",
+                                            "Age": 30,
+                                            "Existing_EMI": 0,
+                                            "Document_Verified": 1
+                                        }
+                                        result = ml_service.predict_eligibility(applicant_data)
+                                        eligible = result["eligibility_status"] == "eligible"
+                                        score = result["eligibility_score"]
+                                        
+                                        if eligible:
+                                            msg = f"Great! I've verified your document. Based on our AI analysis, you are eligible for the loan with a confidence score of {int(score*100)}%. A manager will review your application shortly."
+                                        else:
+                                            msg = f"I've verified your document. However, based on our AI analysis, we cannot approve the full amount at this time. Your eligibility score is {int(score*100)}%."
+                                    except Exception as e:
+                                        logger.error(f"ML Prediction failed: {e}")
+                                        if credit >= 650 and income >= 1000:
+                                            eligible = True
+                                            msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
+                                        else:
+                                            msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
+                                else:
+                                    if credit >= 650 and income >= 1000:
+                                        eligible = True
+                                        msg = f"Great! I've verified your document. You meet our basic criteria for the ${loan} loan."
+                                    else:
+                                        msg = f"I've verified your document. Unfortunately, based on your credit score, we cannot approve the full amount."
+                                
+                                # Save to Database
+                                application_id = None
+                                try:
+                                    from app.models.database import SessionLocal, LoanApplication
+                                    from datetime import datetime
+                                    db = SessionLocal()
+                                    new_app = LoanApplication(
+                                        full_name=data.get("name", "Voice User"),
+                                        monthly_income=float(income),
+                                        credit_score=int(credit),
+                                        loan_amount_requested=float(loan),
+                                        loan_tenure_years=5,
+                                        employment_type="Salaried",
+                                        eligibility_status="eligible" if eligible else "ineligible",
+                                        eligibility_score=float(score) if ML_SERVICE_AVAILABLE else (0.9 if eligible else 0.4),
+                                        debt_to_income_ratio=float(result.get("debt_to_income_ratio", 0.0)) if ML_SERVICE_AVAILABLE else 0.0,
+                                        document_verified=True,
+                                        created_at=datetime.utcnow()
+                                    )
+                                    db.add(new_app)
+                                    db.commit()
+                                    db.refresh(new_app)
+                                    application_id = new_app.id
+                                    db.close()
+                                except Exception as e:
+                                    logger.error(f"Failed to save application to DB: {e}")
 
-                        await websocket.send_json({
-                            "type": "eligibility_result", 
-                            "data": {
-                                "eligible": eligible, 
-                                "message": msg,
-                                "application_id": application_id,
-                                "score": score if ML_SERVICE_AVAILABLE else 0
-                            }
-                        })
-                    
-                    await websocket.send_json({"type": "final_transcript", "data": msg})
-                    history.append({"role": "assistant", "content": msg})
-                    
-                    audio = await synthesize_speech_deepgram(msg)
-                    if audio:
-                        b64 = base64.b64encode(audio).decode('ascii')
-                        await websocket.send_json({"type": "audio_chunk", "data": b64})
+                                await websocket.send_json({
+                                    "type": "eligibility_result", 
+                                    "data": {
+                                        "eligible": eligible, 
+                                        "message": msg,
+                                        "application_id": application_id,
+                                        "score": score if ML_SERVICE_AVAILABLE else 0
+                                    }
+                                })
+                            
+                            await websocket.send_json({"type": "final_transcript", "data": msg})
+                            history.append({"role": "assistant", "content": msg})
+                            
+                            audio = await synthesize_speech_deepgram(msg)
+                            if audio:
+                                b64 = base64.b64encode(audio).decode('ascii')
+                                await websocket.send_json({"type": "audio_chunk", "data": b64})
+            
+            except WebSocketDisconnect:
+                logger.info(f"Voice session ended: {session_id}")
+            except Exception as e:
+                logger.error(f"Error in voice session: {e}", exc_info=True)
+            finally:
+                # Context manager handles disconnect automatically? 
+                # Or we might want to log.
+                pass
 
-    except WebSocketDisconnect:
-        logger.info(f"Voice session ended: {session_id}")
     except Exception as e:
-        logger.error(f"Error in voice session: {e}", exc_info=True)
-    finally:
-        dg_connection.finish()
+        logger.error(f"Connection setup failed: {e}", exc_info=True)
         try:
-            await websocket.close()
+             await websocket.close()
         except: pass
 
 async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict):
@@ -400,7 +421,8 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                     
                     if "monthly_income" in new_fields and has_numbers:
                         try:
-                            val = float(str(new_fields["monthly_income"]).replace(',', ''))
+                            val_str = str(new_fields["monthly_income"]).replace(',', '').replace('$', '')
+                            val = float(val_str)
                             if val > 0: data["monthly_income"] = val
                         except: pass
                     
@@ -409,10 +431,11 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                             val = int(new_fields["credit_score"])
                             if 300 <= val <= 850: data["credit_score"] = val
                         except: pass
-                    
+                        
                     if "loan_amount" in new_fields and has_numbers:
                         try:
-                            val = float(str(new_fields["loan_amount"]).replace(',', ''))
+                            val_str = str(new_fields["loan_amount"]).replace(',', '').replace('$', '')
+                            val = float(val_str)
                             if val > 0: data["loan_amount"] = val
                         except: pass
                     
@@ -422,12 +445,29 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
 
         history.append({"role": "assistant", "content": full_response})
         
-        # Magic Phrase Detector
-        magic_phrases = ["check your eligibility", "checking your eligibility", "verify your eligibility"]
+        # Magic Phrase Detector (Check both AI response and User input)
+        magic_phrases = [
+            "check your eligibility", "checking your eligibility", "verify your eligibility", "check eligibility",
+            "eligibility checked", "checking eligibility", "verify identity",
+            "checking to see if you are eligible", "let me check your eligibility"
+        ]
+        
+        user_triggers = ["check my eligibility", "check eligibility", "am i eligible", "verify me"]
+        
         required_fields = ["monthly_income", "credit_score", "loan_amount"]
         has_all_data = all(data.get(k) for k in required_fields)
 
-        if any(phrase in full_response.lower() for phrase in magic_phrases) and has_all_data:
+        logger.info(f"DEBUG TRIGGER: Data={data}")
+        logger.info(f"DEBUG TRIGGER: Full Response='{full_response}'")
+        logger.info(f"DEBUG TRIGGER: Has All Data={has_all_data}")
+        
+        ai_phrase_detected = any(phrase in full_response.lower() for phrase in magic_phrases)
+        user_phrase_detected = any(phrase in user_text.lower() for phrase in user_triggers)
+        
+        logger.info(f"DEBUG TRIGGER: AI Phrase={ai_phrase_detected}, User Phrase={user_phrase_detected}")
+
+        if (ai_phrase_detected or user_phrase_detected) and has_all_data:
+            logger.info("DEBUG TRIGGER: Sending document_verification_required")
             await websocket.send_json({
                 "type": "document_verification_required",
                 "data": {

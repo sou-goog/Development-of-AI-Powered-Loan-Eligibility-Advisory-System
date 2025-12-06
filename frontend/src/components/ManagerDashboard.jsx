@@ -15,11 +15,11 @@ import {
 } from "lucide-react";
 import MiniChatbot from "./MiniChatbot";
 import { motion, AnimatePresence } from "framer-motion";
+import { managerAPI, reportAPI } from "../utils/api";
+import { toast } from "react-toastify";
 
 /**
- * ManagerDashboard - Material-inspired redesign
- *
- * Replace the placeholder fetch/post functions with your real API calls.
+ * ManagerDashboard - Connected to Real API
  */
 
 export default function ManagerDashboard() {
@@ -34,25 +34,31 @@ export default function ManagerDashboard() {
   const [stats, setStats] = useState(null);
 
   // ---- lifecycle: load data ----
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const [apps, statData] = await Promise.all([
-          loadApplications(),
-          loadStats(),
-        ]);
-        setApplications(apps);
-        setStats(statData);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load manager data.");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch stats and applications (limit 50 for now to see most)
+      const [appsRes, statsRes] = await Promise.all([
+        managerAPI.getApplications(null, 1, 50),
+        managerAPI.getStatistics(),
+      ]);
+
+      setApplications(appsRes.data || []);
+      setStats(statsRes.data || {});
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load manager data.");
+      toast.error("Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   // ---- derived data ----
   const filteredApplications = useMemo(() => {
@@ -127,42 +133,57 @@ export default function ManagerDashboard() {
 
   // ---- handlers ----
   const openDetails = useCallback(
-    (id) => {
-      const app = applications.find((a) => a.id === id);
-      if (app) setSelectedApp(app);
+    async (id) => {
+      // Fetch full details for the selected app
+      try {
+        const res = await managerAPI.getApplicationDetails(id);
+        setSelectedApp(res.data);
+      } catch (e) {
+        toast.error("Failed to load application details");
+      }
     },
-    [applications]
+    []
   );
 
   const handleDecision = useCallback(async (id, decision) => {
     // optimistic UI update
+    const oldApps = [...applications];
     setApplications((prev) =>
       prev.map((a) => (a.id === id ? { ...a, approval_status: decision } : a))
     );
 
     try {
-      await postDecision(id, decision); // replace with your API
-      // refresh stats (optionally refresh apps)
-      const latestStats = await loadStats();
-      setStats(latestStats);
+      if (decision === "approved") {
+        await managerAPI.approveApplication(id, "Approved via Dashboard");
+      } else {
+        await managerAPI.rejectApplication(id, "Rejected via Dashboard");
+      }
+      toast.success(`Application ${decision}`);
+      // refresh stats
+      const statsRes = await managerAPI.getStatistics();
+      setStats(statsRes.data);
     } catch (err) {
       console.error(err);
-      setError("Failed to update decision. Reverting change.");
+      toast.error("Failed to update decision");
       // revert on failure
-      setApplications((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, approval_status: "pending" } : a
-        )
-      );
+      setApplications(oldApps);
     }
-  }, []);
+  }, [applications]);
 
   const handleDownloadReport = useCallback(async (id) => {
     try {
-      await downloadReport(id); // replace with your API call that returns a file or url
+      const res = await reportAPI.downloadReport(id);
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `loan_report_${id}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } catch (err) {
       console.error(err);
-      setError("Failed to download report.");
+      toast.error("Failed to download report. It might not be generated yet.");
     }
   }, []);
 
@@ -193,6 +214,13 @@ export default function ManagerDashboard() {
           <div className="p-3 rounded-lg bg-gradient-to-br from-primary-50 to-white shadow-sm">
             <BarChart3 className="w-6 h-6 text-primary-600" />
           </div>
+          <button
+            onClick={fetchData}
+            className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
+            title="Refresh Data"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21h5v-5" /></svg>
+          </button>
         </div>
       </div>
 
@@ -239,11 +267,10 @@ export default function ManagerDashboard() {
             <button
               key={String(opt.key)}
               onClick={() => setFilter(opt.key)}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition ${
-                filter === opt.key
+              className={`px-3 py-2 rounded-md text-sm font-medium transition ${filter === opt.key
                   ? "bg-primary-600 text-white shadow"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
+                }`}
             >
               {opt.label}
             </button>
@@ -346,7 +373,7 @@ export default function ManagerDashboard() {
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-gray-400" />
                         <div className="font-medium">
-                          ${niceCurrency(app.loan_amount)}
+                          {niceCurrency(app.loan_amount || app.loan_amount_requested)}
                         </div>
                       </div>
                     </td>
@@ -359,8 +386,8 @@ export default function ManagerDashboard() {
                             {app.eligibility_score == null
                               ? "N/A"
                               : `${Math.round(
-                                  (app.eligibility_score || 0) * 100
-                                )}%`}
+                                (app.eligibility_score || 0) * 100
+                              )}%`}
                           </div>
                         </div>
                         <div className="w-24 bg-gray-100 rounded-full h-2">
@@ -525,72 +552,3 @@ function ContactField({ icon: Icon, label, value }) {
   );
 }
 
-/* ---------------------------
-   Placeholder network functions
-   Replace with real API implementations
-   --------------------------- */
-
-async function loadApplications() {
-  // TODO: Replace with your API call, e.g.:
-  // const res = await fetch("/api/manager/applications");
-  // return await res.json();
-  // For now return mocked data so component works out-of-the-box:
-  await sleep(200);
-  return [
-    {
-      id: "app_1",
-      full_name: "Alex Morgan",
-      email: "alex@example.com",
-      phone: "555-1234",
-      loan_amount: 25000,
-      annual_income: 65000,
-      credit_score: 720,
-      eligibility_score: 0.78,
-      approval_status: "pending",
-      created_at: "2025-11-30T10:00:00Z",
-    },
-    {
-      id: "app_2",
-      full_name: "Samira Khan",
-      email: "samira@example.com",
-      phone: "555-9876",
-      loan_amount: 10000,
-      annual_income: 42000,
-      credit_score: 660,
-      eligibility_score: 0.62,
-      approval_status: "approved",
-      created_at: "2025-11-28T08:00:00Z",
-    },
-  ];
-}
-
-async function loadStats() {
-  // TODO: replace with real API call
-  await sleep(80);
-  return {
-    total_applications: 2,
-    approved_applications: 1,
-    rejected_applications: 0,
-    pending_applications: 1,
-  };
-}
-
-async function postDecision(id, decision) {
-  // Replace with POST/PUT request to set decision
-  await sleep(150);
-  // Example: return await fetch(`/api/applications/${id}/decision`, {...})
-  return { ok: true };
-}
-
-async function downloadReport(id) {
-  // Replace with real report-download logic.
-  // Example: fetch file as blob -> createObjectURL -> open or download
-  await sleep(200);
-  // For now just log
-  console.log("Download report for", id);
-  return true;
-}
-
-function sleep(ms = 100) {
-  return new Promise((res) => setTimeout(res, ms));
-}
