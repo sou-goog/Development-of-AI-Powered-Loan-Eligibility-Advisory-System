@@ -88,7 +88,7 @@ export default function App() {
         <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
 
         {/* Voice agent */}
-        <Route path="/voice-agent" element={<VoiceAgentRealtimev2 />} />
+        <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
 
         {/* 404 → redirect home */}
         <Route path="*" element={<Navigate to="/" />} />
