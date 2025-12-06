@@ -31,6 +31,8 @@ import SystemSettings from "./pages/SystemSettings";
 import ProjectOverview from "./pages/ProjectOverview";
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 
+// Voice agent
+import VoiceAgentRealtime from "./components/VoiceAgentRealtime_v2";
 
 // Utils
 import { auth } from "./utils/auth";
