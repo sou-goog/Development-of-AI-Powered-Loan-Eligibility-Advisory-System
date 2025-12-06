@@ -14,10 +14,6 @@ import MainLayout from "./layout/MainLayout";
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
 import ApplyPage from "./pages/ApplyPage";
-import Verification from "./pages/Verification";
-import Manager from "./pages/Manager";
-import EligibilityResultPage from "./pages/EligibilityResultPage";
-import MiniChatbot from "./components/MiniChatbot";
 
 // Dashboard pages
 import Login from "./pages/Login";
