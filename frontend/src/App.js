@@ -14,10 +14,6 @@ import MainLayout from "./layout/MainLayout";
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
 import ApplyPage from "./pages/ApplyPage";
-import Verification from "./pages/Verification";
-import Manager from "./pages/Manager";
-import EligibilityResultPage from "./pages/EligibilityResultPage";
-import MiniChatbot from "./components/MiniChatbot";
 
 // Dashboard pages
 import Login from "./pages/Login";
@@ -32,7 +28,7 @@ import ProjectOverview from "./pages/ProjectOverview";
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 
 // Voice agent
-import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtime_v2";
+import VoiceAgentRealtime from "./components/VoiceAgentRealtime_v2";
 
 // Utils
 import { auth } from "./utils/auth";
@@ -90,7 +86,7 @@ export default function App() {
         <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
 
         {/* Voice agent */}
-        <Route path="/voice-agent" element={<VoiceAgentRealtime_v2 />} />
+        <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
 
         {/* 404 → redirect home */}
         <Route path="*" element={<Navigate to="/" />} />
@@ -105,8 +101,7 @@ export default function App() {
             }
           />
 
-          {/* Voice agent (if needed) */}
-          <Route path="/voice-agent" element={<VoiceAgentRealtimeV2 />} />
+         
         </Routes>
 
         <ToastContainer position="top-right" autoClose={4000} />
