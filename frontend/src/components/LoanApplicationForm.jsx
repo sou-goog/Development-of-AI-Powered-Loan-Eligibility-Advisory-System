@@ -288,32 +288,6 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     }
   };
 
-  const renderStepIndicator = () => (
-    <div className="flex items-center justify-center mb-8">
-      {Array.from({ length: totalSteps }, (_, i) => (
-        <div key={i} className="flex items-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ${
-              i + 1 <= currentStep
-                ? "bg-primary-600 text-white"
-                : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            {i + 1}
-          </motion.div>
-          {i < totalSteps - 1 && (
-            <div
-              className={`w-12 h-1 mx-2 ${
-                i + 1 < currentStep ? "bg-primary-600" : "bg-gray-200"
-              }`}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  );
 
   const renderPersonalInfo = () => (
     <motion.div
@@ -393,7 +367,6 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             name="age"
             value={formData.age}
             onChange={handleInputChange}
-            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="25"
             min="18"
             max="100"
@@ -405,7 +378,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Gender *
           </label>
-          <select className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100"
+          <select
             name="gender"
             value={formData.gender}
             onChange={handleInputChange}

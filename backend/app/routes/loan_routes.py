@@ -18,6 +18,36 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 ml_service = MLModelService()
+
+# Manager: Get all applications with document info
+@router.get("/applications/all", response_model=None)
+async def get_all_applications(db: Session = Depends(get_db)):
+    """Return all loan applications for manager view, including uploaded documents and extracted data."""
+    apps = db.query(LoanApplication).order_by(LoanApplication.created_at.desc()).all()
+    result = []
+    for app in apps:
+        extracted = app.extracted_data if isinstance(app.extracted_data, dict) else {}
+        uploaded_docs = extracted.get("uploaded_documents", [])
+        # Normalize uploaded_docs to list of dicts with id and (optionally) file_path
+        norm_docs = []
+        for doc in uploaded_docs:
+            if isinstance(doc, dict):
+                norm_docs.append(doc)
+            else:
+                norm_docs.append({"id": doc})
+        result.append({
+            "id": app.id,
+            "full_name": app.full_name,
+            "email": app.email,
+            "phone": app.phone,
+            "created_at": app.created_at,
+            "approval_status": app.approval_status,
+            "document_verified": app.document_verified,
+            "uploaded_documents": norm_docs,
+            "extracted_data": extracted,
+            "report_path": getattr(app, "report_path", None),
+        })
+    return {"applications": result}
 def _get_current_user(request: Request, db: Session) -> User | None:
     """Extract current user from Authorization bearer token."""
     try:

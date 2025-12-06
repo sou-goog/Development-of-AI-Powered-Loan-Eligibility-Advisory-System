@@ -3,7 +3,6 @@ import {
   Users,
   DollarSign,
   Target,
-  Eye,
   FileText,
   XCircle,
   BarChart3,
@@ -11,7 +10,6 @@ import {
   CheckCircle,
   Phone,
   Mail,
-  Download,
 } from "lucide-react";
 import MiniChatbot from "./MiniChatbot";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,7 +26,6 @@ export default function ManagerDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const [selectedApp, setSelectedApp] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState(null); // null | 'pending' | 'approved' | 'rejected'
   const [stats, setStats] = useState(null);
@@ -44,7 +41,7 @@ export default function ManagerDashboard() {
         setStats(statData);
       } catch (err) {
         console.error(err);
-        setError("Failed to load manager data.");
+        setError("Failed to load manager data: " + (err && err.message ? err.message : String(err)));
       } finally {
         setLoading(false);
       }
@@ -117,13 +114,7 @@ export default function ManagerDashboard() {
   ];
 
   // ---- handlers ----
-  const openDetails = useCallback(
-    (id) => {
-      const app = applications.find((a) => a.id === id);
-      if (app) setSelectedApp(app);
-    },
-    [applications]
-  );
+  // Removed openDetails and setSelectedApp (no longer used)
 
   const handleDecision = useCallback(
     async (id, decision) => {
@@ -149,14 +140,11 @@ export default function ManagerDashboard() {
     []
   );
 
-  const handleDownloadReport = useCallback(async (id) => {
-    try {
-      await downloadReport(id); // replace with your API call that returns a file or url
-    } catch (err) {
-      console.error(err);
-      setError("Failed to download report.");
-    }
-  }, []);
+  const [reportApp, setReportApp] = useState(null);
+  const handleViewReport = useCallback((id) => {
+    const app = applications.find(a => a.id === id);
+    if (app) setReportApp(app);
+  }, [applications]);
 
   // ---- small helpers ----
   const niceCurrency = (val) => {
@@ -267,6 +255,7 @@ export default function ManagerDashboard() {
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Applicant</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Loan</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Documents</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Eligibility</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Status</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
@@ -276,13 +265,13 @@ export default function ManagerDashboard() {
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                     Loading applications...
                   </td>
                 </tr>
               ) : filteredApplications.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     <FileText className="mx-auto mb-2 w-8 h-8 text-gray-400" />
                     No applications found
                   </td>
@@ -311,7 +300,21 @@ export default function ManagerDashboard() {
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-gray-400" />
-                        <div className="font-medium">${niceCurrency(app.loan_amount)}</div>
+                        <div className="font-medium text-blue-600">${niceCurrency(app.loan_amount)}</div>
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4 text-sm">
+                      <div className="flex flex-wrap gap-1">
+                        {Array.isArray(app.uploaded_documents) && app.uploaded_documents.length > 0 ? (
+                          app.uploaded_documents.map((doc, i) => (
+                            <span key={doc.id || i} className="inline-block px-2 py-1 rounded bg-gray-100 text-xs font-semibold text-gray-700 border border-gray-200">
+                              {doc.id ? doc.id.replace(/_/g, ' ').toUpperCase() : 'DOC'}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-gray-400">No docs</span>
+                        )}
                       </div>
                     </td>
 
@@ -319,7 +322,7 @@ export default function ManagerDashboard() {
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <Target className="w-4 h-4 text-gray-400" />
-                          <div className="text-sm font-medium">
+                          <div className="text-sm font-bold text-green-600">
                             {app.eligibility_score == null ? "N/A" : `${Math.round((app.eligibility_score || 0) * 100)}%`}
                           </div>
                         </div>
@@ -340,13 +343,7 @@ export default function ManagerDashboard() {
 
                     <td className="px-6 py-4 text-right text-sm">
                       <div className="inline-flex items-center gap-2">
-                        <button
-                          onClick={() => openDetails(app.id)}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:shadow-sm"
-                        >
-                          <Eye className="w-4 h-4 text-gray-600" />
-                          <span className="text-sm text-gray-700">View</span>
-                        </button>
+                        {/* Removed openDetails reference. If you want to show details, use handleViewReport or another handler. */}
 
                         {app.approval_status === "pending" && (
                           <>
@@ -366,11 +363,11 @@ export default function ManagerDashboard() {
                         )}
 
                         <button
-                          onClick={() => handleDownloadReport(app.id)}
+                          onClick={() => handleViewReport(app.id)}
                           className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm hover:bg-primary-700"
                         >
-                          <Download className="w-4 h-4 inline-block mr-1" />
-                          Report
+                          <FileText className="w-4 h-4 inline-block mr-1" />
+                          View Report
                         </button>
                       </div>
                     </td>
@@ -382,29 +379,29 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Report Modal */}
       <AnimatePresence>
-        {selectedApp && (
+        {reportApp && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
           >
             <motion.div
               initial={{ scale: 0.96 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.96 }}
-              className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"
+              className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]"
             >
               <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold">{selectedApp.full_name}</h3>
-                  <p className="text-sm opacity-90">Application Details</p>
+                  <h3 className="text-lg font-semibold">{reportApp.full_name}</h3>
+                  <p className="text-sm opacity-90">Applicant Report & Details</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setSelectedApp(null)}
+                    onClick={() => setReportApp(null)}
                     className="p-2 rounded-full hover:bg-white/10"
                     aria-label="Close"
                   >
@@ -412,13 +409,45 @@ export default function ManagerDashboard() {
                   </button>
                 </div>
               </div>
-
-              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left column: contact & financial */}
-                <div className="space-y-4">
-                  <ContactField icon={Mail} label="Email" value={selectedApp.email} />
-                  <ContactField icon={Phone} label="Phone" value={selectedApp.phone} />
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ContactField icon={Mail} label="Email" value={reportApp.email} />
+                  <ContactField icon={Phone} label="Phone" value={reportApp.phone} />
+                  <ContactField icon={Users} label="Full Name" value={reportApp.full_name} />
+                  <ContactField icon={DollarSign} label="Loan Amount" value={niceCurrency(reportApp.loan_amount_requested)} />
+                  <ContactField icon={Target} label="Eligibility Score" value={reportApp.eligibility_score != null ? `${Math.round((reportApp.eligibility_score || 0) * 100)}%` : "N/A"} />
+                  <ContactField icon={BarChart3} label="Credit Score" value={reportApp.credit_score} />
+                  <ContactField icon={FileText} label="Application Status" value={reportApp.approval_status} />
                 </div>
+                <div className="mt-4">
+                  <h4 className="text-md font-semibold mb-2 text-fuchsia-700">Uploaded Documents</h4>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {Array.isArray(reportApp.uploaded_documents) && reportApp.uploaded_documents.length > 0 ? (
+                      reportApp.uploaded_documents.map((doc, i) => (
+                        <span key={doc.id || i} className="inline-block px-2 py-1 rounded bg-gray-100 text-xs font-semibold text-gray-700 border border-gray-200">
+                          {doc.id ? doc.id.replace(/_/g, ' ').toUpperCase() : 'DOC'}
+                          {doc.file_path && (
+                            <a href={doc.file_path} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-600 underline">View</a>
+                          )}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-gray-400">No documents uploaded</span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <h4 className="text-md font-semibold mb-2 text-fuchsia-700">Form Data</h4>
+                  <pre className="bg-gray-50 rounded p-3 text-xs font-semibold overflow-x-auto border border-gray-100 text-fuchsia-700">
+                    {JSON.stringify(reportApp, null, 2)}
+                  </pre>
+                </div>
+                {reportApp.report_path && (
+                  <div className="mt-4">
+                    <h4 className="text-md font-semibold mb-2">Generated Report</h4>
+                    <iframe src={reportApp.report_path} title="Applicant Report" className="w-full h-96 rounded border" />
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>
@@ -468,42 +497,16 @@ function ContactField({ icon: Icon, label, value }) {
    --------------------------- */
 
 async function loadApplications() {
-  // TODO: Replace with your API call, e.g.:
-  // const res = await fetch("/api/manager/applications");
-  // return await res.json();
-  // For now return mocked data so component works out-of-the-box:
-  await sleep(200);
-  return [
-    {
-      id: "app_1",
-      full_name: "Alex Morgan",
-      email: "alex@example.com",
-      phone: "555-1234",
-      loan_amount: 25000,
-      annual_income: 65000,
-      credit_score: 720,
-      eligibility_score: 0.78,
-      approval_status: "pending",
-      created_at: "2025-11-30T10:00:00Z",
-    },
-    {
-      id: "app_2",
-      full_name: "Samira Khan",
-      email: "samira@example.com",
-      phone: "555-9876",
-      loan_amount: 10000,
-      annual_income: 42000,
-      credit_score: 660,
-      eligibility_score: 0.62,
-      approval_status: "approved",
-      created_at: "2025-11-28T08:00:00Z",
-    },
-  ];
+  const res = await fetch("/api/manager/applications");
+  if (!res.ok) throw new Error("Failed to fetch applications");
+  const data = await res.json();
+  // If data is an array, return as is; if it's an object, return data.applications
+  return Array.isArray(data) ? data : (data.applications || []);
 }
 
 async function loadStats() {
   // TODO: replace with real API call
-  await sleep(80);
+    // await sleep(80); // Removed unused sleep function
   return {
     total_applications: 2,
     approved_applications: 1,
@@ -514,21 +517,8 @@ async function loadStats() {
 
 async function postDecision(id, decision) {
   // Replace with POST/PUT request to set decision
-  await sleep(150);
+    // await sleep(150); // Removed unused sleep function
   // Example: return await fetch(`/api/applications/${id}/decision`, {...})
   return { ok: true };
-}
-
-async function downloadReport(id) {
-  // Replace with real report-download logic.
-  // Example: fetch file as blob -> createObjectURL -> open or download
-  await sleep(200);
-  // For now just log
-  console.log("Download report for", id);
-  return true;
-}
-
-function sleep(ms = 100) {
-  return new Promise((res) => setTimeout(res, ms));
 }
 

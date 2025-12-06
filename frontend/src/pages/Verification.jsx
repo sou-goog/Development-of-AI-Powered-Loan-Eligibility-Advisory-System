@@ -1,8 +1,6 @@
-﻿import React, { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+﻿import React from "react";
+import { useLocation } from "react-router-dom";
 import DocumentVerification from "../components/DocumentVerification";
-import { loanAPI } from "../utils/api";
-import { toast } from "react-toastify";
 
 // Beautiful, glassy, and interactive Verification page
 export default function Verification() {
