@@ -34,15 +34,9 @@ from dotenv import load_dotenv
 
 # Cloud APIs
 from groq import AsyncGroq
-from deepgram import DeepgramClient, AsyncDeepgramClient
+from deepgram import DeepgramClient, AsyncDeepgramClient, LiveTranscriptionEvents
 
-class LiveTranscriptionEvents:
-    Transcript = "Results"
-    Error = "Error"
-    Close = "Close"
-    Metadata = "Metadata"
-    SpeechStarted = "SpeechStarted"
-    UtteranceEnd = "UtteranceEnd"
+# class LiveTranscriptionEvents: (Removed to use SDK constants)
 
 # Try to import optional services
 try:
@@ -58,6 +52,12 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Add file handler for debugging
+fh = logging.FileHandler('backend_debug.log')
+fh.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
 router = APIRouter()
 
@@ -87,8 +87,8 @@ Your job:
    - Monthly income (in dollars)
    - Credit score (300-850 range)
    - Desired loan amount (in dollars)
-3. Respond in SHORT, natural sentences (max 15 words per sentence)
-4. Be conversational and empathetic
+3. Respond in SHORT, conversational sentences (max 15 words).
+4. Be casual, friendly, and efficient.
 5. When you extract information, acknowledge it
 6. Once all fields are collected (Name, Income, Credit Score, Amount), you MUST IMMEDIATELY say "Checking to see if you are eligible..." to proceed. DO NOT ask the user "Should I check now?". Just do it.
 
@@ -152,17 +152,30 @@ async def voice_stream_endpoint(websocket: WebSocket):
     # Deepgram Live Connection
     try:
         # Define Event Handlers
-        async def on_message(self, result, **kwargs):
-            sentence = result.channel.alternatives[0].transcript
-            if len(sentence) == 0:
-                return
-            
-            if result.is_final:
-                logger.info(f"User said: {sentence}")
-                await websocket.send_json({"type": "final_transcript", "data": sentence})
-                await process_llm_response(sentence, websocket, conversation_history, structured_data)
+        # Define Event Handlers
+        def on_message(self, result, **kwargs):
+            try:
+                sentence = result.channel.alternatives[0].transcript
+                logger.info(f"Deepgram transcript (final={result.is_final}): {sentence}")
+                
+                if len(sentence) == 0:
+                    return 
+                
+                if result.is_final:
+                    logger.info(f"User said: {sentence}")
+                    
+                    async def process_async():
+                        try:
+                            await websocket.send_json({"type": "final_transcript", "data": sentence})
+                            await process_llm_response(sentence, websocket, conversation_history, structured_data)
+                        except Exception as e:
+                            logger.error(f"Error processing async response: {e}")
+                            
+                    asyncio.create_task(process_async())
+            except Exception as e:
+                logger.error(f"Error in on_message: {e}")
 
-        async def on_error(self, error, **kwargs):
+        def on_error(self, error, **kwargs):
             logger.error(f"Deepgram Error: {error}")
 
         options = {
@@ -188,17 +201,35 @@ async def voice_stream_endpoint(websocket: WebSocket):
             dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
             dg_connection.on(LiveTranscriptionEvents.Error, on_error)
             dg_connection.on(LiveTranscriptionEvents.Close, lambda self, close, **kwargs: logger.info(f"Deepgram Connection Closed: {close}"))
+            dg_connection.on(LiveTranscriptionEvents.Metadata, lambda self, metadata, **kwargs: logger.info(f"Deepgram Metadata: {metadata}"))
+            dg_connection.on(LiveTranscriptionEvents.SpeechStarted, lambda self, speech_started, **kwargs: logger.info(f"Deepgram SpeechStarted"))
+            dg_connection.on(LiveTranscriptionEvents.UtteranceEnd, lambda self, utterance_end, **kwargs: logger.info(f"Deepgram UtteranceEnd"))
 
             logger.info("Deepgram STT Connected.")
             
             try:
+                chunk_count = 0
+                logger.info("Entering WebSocket Receive Loop...")
                 while True:
                     # Receive message (bytes or text)
-                    message = await websocket.receive()
+                    try:
+                        # logger.info("Waiting for websocket message...")
+                        message = await websocket.receive()
+                        # logger.info(f"Received message keys: {list(message.keys())}")
+                    except RuntimeError:
+                        logger.info("WebSocket disconnected during receive.")
+                        break
                     
                     if "bytes" in message:
                         # Audio chunk
                         chunk = message["bytes"]
+                        chunk_count += 1
+                        if chunk_count % 10 == 0: # Log more frequently
+                             logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes)")
+                        
+                        # chunk type check
+                        # logger.info(f"Chunk type: {type(chunk)}")
+                        
                         # Send to Deepgram using Async Client method
                         await dg_connection.send_media(chunk)
                     
@@ -230,7 +261,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
                             else:
                                 eligible = False
                                 reason = ""
-                                await websocket.send_json({"type": "final_transcript", "data": "Checking your eligibility..."})
+                                await websocket.send_json({"type": "assistant_transcript", "data": "Checking your eligibility..."})
                                 
                                 if ML_SERVICE_AVAILABLE:
                                     try:
@@ -274,7 +305,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                     from datetime import datetime
                                     db = SessionLocal()
                                     new_app = LoanApplication(
-                                        full_name=data.get("name", "Voice User"),
+                                        full_name=structured_data.get("name", "Voice User"),
                                         monthly_income=float(income),
                                         credit_score=int(credit),
                                         loan_amount_requested=float(loan),
@@ -304,8 +335,8 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                     }
                                 })
                             
-                            await websocket.send_json({"type": "final_transcript", "data": msg})
-                            history.append({"role": "assistant", "content": msg})
+                            await websocket.send_json({"type": "assistant_transcript", "data": msg})
+                            conversation_history.append({"role": "assistant", "content": msg})
                             
                             audio = await synthesize_speech_deepgram(msg)
                             if audio:
@@ -404,35 +435,47 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                  b64 = base64.b64encode(audio).decode('ascii')
                  await websocket.send_json({"type": "audio_chunk", "data": b64})
 
-        # Process Extracted JSON
-        if json_buffer.strip():
+        # Process Extracted JSON (Robust Fallback logic)
+        # Even if streaming missed the delimiter, we can find it in the full response
+        json_candidate = ""
+        if "|||JSON|||" in full_response:
+            parts = full_response.split("|||JSON|||")
+            if len(parts) > 1:
+                json_candidate = parts[1]
+        elif json_buffer.strip():
+            json_candidate = json_buffer
+
+        if json_candidate.strip():
             try:
-                json_str = json_buffer.strip()
+                json_str = json_candidate.strip()
                 match = re.search(r'\{.*\}', json_str, re.DOTALL)
                 if match:
                     json_str = match.group(0)
-                    new_fields = json.loads(json_str)
-                    
-                    has_numbers = bool(re.search(r'\d', user_text))
+                    try:
+                        new_fields = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        # Fallback for single quotes or Python-style dicts
+                        import ast
+                        new_fields = ast.literal_eval(json_str)
                     
                     if "name" in new_fields and isinstance(new_fields["name"], str):
                         if new_fields["name"].strip():
                             data["name"] = new_fields["name"].title()
                     
-                    if "monthly_income" in new_fields and has_numbers:
+                    if "monthly_income" in new_fields:
                         try:
                             val_str = str(new_fields["monthly_income"]).replace(',', '').replace('$', '')
                             val = float(val_str)
                             if val > 0: data["monthly_income"] = val
                         except: pass
                     
-                    if "credit_score" in new_fields and has_numbers:
+                    if "credit_score" in new_fields:
                         try:
                             val = int(new_fields["credit_score"])
                             if 300 <= val <= 850: data["credit_score"] = val
                         except: pass
                         
-                    if "loan_amount" in new_fields and has_numbers:
+                    if "loan_amount" in new_fields:
                         try:
                             val_str = str(new_fields["loan_amount"]).replace(',', '').replace('$', '')
                             val = float(val_str)
@@ -455,10 +498,11 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         user_triggers = ["check my eligibility", "check eligibility", "am i eligible", "verify me"]
         
         required_fields = ["monthly_income", "credit_score", "loan_amount"]
-        has_all_data = all(data.get(k) for k in required_fields)
+        missing_fields = [k for k in required_fields if not data.get(k)]
+        has_all_data = len(missing_fields) == 0
 
-        logger.info(f"DEBUG TRIGGER: Data={data}")
-        logger.info(f"DEBUG TRIGGER: Full Response='{full_response}'")
+        logger.info(f"DEBUG TRIGGER: Data Keys={list(data.keys())}")
+        logger.info(f"DEBUG TRIGGER: Missing Fields={missing_fields}")
         logger.info(f"DEBUG TRIGGER: Has All Data={has_all_data}")
         
         ai_phrase_detected = any(phrase in full_response.lower() for phrase in magic_phrases)

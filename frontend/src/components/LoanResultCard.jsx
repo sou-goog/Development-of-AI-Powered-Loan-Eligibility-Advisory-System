@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ReactMarkdown from 'react-markdown';
 import { motion } from "framer-motion";
 import {
   CheckCircle,
@@ -9,6 +10,8 @@ import {
   CreditCard,
   Target,
   Award,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { reportAPI } from "../utils/api";
 
@@ -22,6 +25,7 @@ const LoanResultCard = ({
   const [analysis, setAnalysis] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
+  const [showSummary, setShowSummary] = useState(false);
   const getStatusConfig = (status) => {
     switch (status?.toLowerCase()) {
       case "eligible":
@@ -156,36 +160,6 @@ const LoanResultCard = ({
   ];
 
   // Auto-generate analysis once when result is present
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!applicationId || !result || analysis) return;
-      setLoadingExplain(true);
-      setAnalysisError("");
-      try {
-        const { data } = await reportAPI.generateAnalysis(applicationId);
-        // Prefer explicit analysis text; if missing, fall back to raw payload for debugging
-        const analysisText = data?.analysis ?? JSON.stringify(data ?? {});
-        if (!cancelled) setAnalysis(analysisText);
-      } catch (e) {
-        // Provide more detailed error feedback for debugging
-        let msg =
-          "Sorry, I'm having trouble responding right now. Please try again.";
-        try {
-          msg =
-            e?.response?.data?.detail || e?.response?.data || e?.message || msg;
-        } catch (__) {}
-        if (!cancelled) setAnalysisError(String(msg));
-      } finally {
-        if (!cancelled) setLoadingExplain(false);
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicationId, !!result]);
 
   return (
     <motion.div
@@ -196,7 +170,7 @@ const LoanResultCard = ({
     >
       {/* Main Result Card */}
       <div
-        className={`card border-2 ${statusConfig.borderColor} ${statusConfig.bgColor} overflow-hidden`}
+        className={`bg-white shadow-lg rounded-xl border-2 ${statusConfig.borderColor} ${statusConfig.bgColor} overflow-hidden`}
       >
         {/* Header */}
         <div className={`bg-gradient-to-r ${statusConfig.gradient} px-6 py-4`}>
@@ -253,9 +227,8 @@ const LoanResultCard = ({
               >
                 <div className="flex items-center space-x-3 mb-2">
                   <div
-                    className={`p-2 rounded-lg ${
-                      metric.bgColor || "bg-gray-100"
-                    }`}
+                    className={`p-2 rounded-lg ${metric.bgColor || "bg-gray-100"
+                      }`}
                   >
                     <metric.icon className={`w-4 h-4 ${metric.color}`} />
                   </div>
@@ -293,7 +266,7 @@ const LoanResultCard = ({
           </div>
 
           {/* Actions */}
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-wrap gap-3 justify-center">
             <button
               disabled={!applicationId || loadingExplain}
               onClick={async () => {
@@ -316,7 +289,7 @@ const LoanResultCard = ({
                       e?.response?.data ||
                       e?.message ||
                       msg;
-                  } catch (__) {}
+                  } catch (__) { }
                   setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
@@ -352,9 +325,8 @@ const LoanResultCard = ({
                   } else {
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `loan_report_${applicationId}${
-                      contentType.includes("pdf") ? ".pdf" : ""
-                    }`;
+                    a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""
+                      }`;
                     a.click();
                     a.remove();
                   }
@@ -384,101 +356,111 @@ const LoanResultCard = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="card mt-6"
+          className="mt-6 bg-white shadow-lg rounded-xl overflow-hidden border border-gray-100"
         >
-          <div className="flex items-center space-x-2 mb-4">
-            <div className="bg-secondary-100 p-2 rounded-lg">
-              <CreditCard className="w-5 h-5 text-secondary-600" />
+          <button
+            onClick={() => setShowSummary(!showSummary)}
+            className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+          >
+            <div className="flex items-center space-x-2">
+              <div className="bg-secondary-100 p-2 rounded-lg">
+                <CreditCard className="w-5 h-5 text-secondary-600" />
+              </div>
+              <h4 className="text-lg font-semibold text-primary-600">
+                Application Summary
+              </h4>
             </div>
-            <h4 className="text-lg font-semibold text-primary-600">
-              Application Summary
-            </h4>
-          </div>
+            {showSummary ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+          </button>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {applicationData && (
-              <div>
-                <h5 className="font-medium text-gray-900 mb-3">
-                  Personal Information
-                </h5>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Name:</span>
-                    <span className="font-medium">
-                      {applicationData.full_name}
-                    </span>
+          {showSummary && (
+            <div className="px-6 pb-6 border-t border-gray-100 pt-6">
+              <div className="grid md:grid-cols-2 gap-6">
+                {applicationData && (
+                  <div>
+                    <h5 className="font-medium text-gray-900 mb-3">
+                      Personal Information
+                    </h5>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Name:</span>
+                        <span className="font-medium">
+                          {applicationData.full_name}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Email:</span>
+                        <span className="font-medium">{applicationData.email}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Phone:</span>
+                        <span className="font-medium">{applicationData.phone}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Monthly Income:</span>
+                        <span className="font-medium">
+                          ₹{applicationData.monthly_income}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Loan Amount:</span>
+                        <span className="font-medium">
+                          ₹{applicationData.loan_amount_requested}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium">{applicationData.email}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Phone:</span>
-                    <span className="font-medium">{applicationData.phone}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Monthly Income:</span>
-                    <span className="font-medium">
-                      ₹{applicationData.monthly_income}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Loan Amount:</span>
-                    <span className="font-medium">
-                      ₹{applicationData.loan_amount_requested}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {extractedData && (
-              <div>
-                <h5 className="font-medium text-secondary-600 mb-3">
-                  Document Verification
-                </h5>
-                <div className="space-y-2 text-sm">
-                  {extractedData.monthly_income && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Verified Income:</span>
-                      <span className="font-medium">
-                        ₹{extractedData.monthly_income}
-                      </span>
+                {extractedData && (
+                  <div>
+                    <h5 className="font-medium text-secondary-600 mb-3">
+                      Document Verification
+                    </h5>
+                    <div className="space-y-2 text-sm">
+                      {extractedData.monthly_income && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Verified Income:</span>
+                          <span className="font-medium">
+                            ₹{extractedData.monthly_income}
+                          </span>
+                        </div>
+                      )}
+                      {extractedData.credit_score && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Credit Score:</span>
+                          <span className="font-medium">
+                            {extractedData.credit_score}
+                          </span>
+                        </div>
+                      )}
+                      {extractedData.account_age_months && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Account Age:</span>
+                          <span className="font-medium">
+                            {extractedData.account_age_months} months
+                          </span>
+                        </div>
+                      )}
+                      {extractedData.avg_balance && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Avg Balance:</span>
+                          <span className="font-medium">
+                            ₹{extractedData.avg_balance}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-3 p-2 bg-green-50 rounded-lg">
+                        <p className="text-green-800 text-xs font-medium">
+                          ✓ Document verification completed
+                        </p>
+                      </div>
                     </div>
-                  )}
-                  {extractedData.credit_score && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Credit Score:</span>
-                      <span className="font-medium">
-                        {extractedData.credit_score}
-                      </span>
-                    </div>
-                  )}
-                  {extractedData.account_age_months && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Account Age:</span>
-                      <span className="font-medium">
-                        {extractedData.account_age_months} months
-                      </span>
-                    </div>
-                  )}
-                  {extractedData.avg_balance && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Avg Balance:</span>
-                      <span className="font-medium">
-                        ₹{extractedData.avg_balance}
-                      </span>
-                    </div>
-                  )}
-                  <div className="mt-3 p-2 bg-green-50 rounded-lg">
-                    <p className="text-green-800 text-xs font-medium">
-                      ✓ Document verification completed
-                    </p>
                   </div>
-                </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -519,17 +501,12 @@ const LoanResultCard = ({
               )}
             </div>
             {analysis && (
-              <div className="prose max-w-none whitespace-pre-wrap text-blue-700 text-sm">
-                {/* Highlight 'Let's start with the basics. Here's the first question:' and 'What is your full name?' if present */}
-                {analysis.split('\n').map((line, idx) => {
-                  if (line.includes("Let's start with the basics")) {
-                    return <span key={idx} className="text-primary-600 font-semibold">{line}</span>;
-                  }
-                  if (line.includes("What is your full name?")) {
-                    return <span key={idx} className="text-secondary-600 font-semibold">{line}</span>;
-                  }
-                  return <span key={idx}>{line}</span>;
-                })}
+              <div className="mt-4 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                <div className="prose prose-sm max-w-none text-gray-700 prose-headings:font-semibold prose-headings:text-indigo-900 prose-p:text-gray-700 prose-strong:text-indigo-700 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1">
+                  <ReactMarkdown>
+                    {analysis}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
             {analysisError && (

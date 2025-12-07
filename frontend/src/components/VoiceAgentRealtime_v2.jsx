@@ -43,6 +43,7 @@ const VoiceAgentRealtime = () => {
   const [eligibilityResult, setEligibilityResult] = useState(null);
   const [showDocumentUpload, setShowDocumentUpload] = useState(false);
   const [applicationId, setApplicationId] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
 
   // Volume state for visualizer
   const [volume, setVolume] = useState(0);
@@ -61,6 +62,7 @@ const VoiceAgentRealtime = () => {
   const currentSourceRef = useRef(null); // Track current audio source
   const currentAiTokenRef = useRef('');
   const messagesEndRef = useRef(null);
+  const modalScrollRef = useRef(null);
 
   /**
    * Play next audio chunk from queue
@@ -174,6 +176,11 @@ const VoiceAgentRealtime = () => {
         }
         setFinalTranscripts(prev => [...prev, { role: 'user', text: data }]);
         setPartialTranscript('');
+        break;
+
+      case 'assistant_transcript':
+        // Explicit message from AI (not streamed)
+        setFinalTranscripts(prev => [...prev, { role: 'assistant', text: data }]);
         break;
 
       case 'ai_token':
@@ -305,6 +312,12 @@ const VoiceAgentRealtime = () => {
 
           // Send raw PCM16LE audio to backend
           wsRef.current.send(int16Data.buffer);
+
+          // DEBUG: Log first send
+          if (!window.hasLoggedAudio) {
+            console.log("Sending audio data...");
+            window.hasLoggedAudio = true;
+          }
         }
       };
 
@@ -456,6 +469,22 @@ const VoiceAgentRealtime = () => {
             </div>
           </div>
         )}
+        {/* Result Card (Inline) */}
+        {eligibilityResult && (
+          <div className="mt-4 mb-4 w-full">
+            <LoanResultCard
+              result={{
+                eligibility_status: eligibilityResult.eligible ? "eligible" : "ineligible",
+                eligibility_score: eligibilityResult.score || 0,
+                risk_level: eligibilityResult.score > 0.7 ? "low_risk" : "medium_risk",
+                credit_tier: "Good",
+                confidence: 0.9
+              }}
+              applicationId={eligibilityResult.application_id}
+              extractedData={extractedData}
+            />
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -492,11 +521,15 @@ const VoiceAgentRealtime = () => {
             </button>
           </div>
 
-          {/* Mic Button */}
+          {/* Mic Button with Volume Visualizer */}
           <button
             onClick={handleCallToggle}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-md flex-shrink-0 ${isRecording
-              ? 'bg-red-500 text-white shadow-red-500/40 scale-110 animate-pulse'
+            style={{
+              boxShadow: isRecording ? `0 0 ${10 + volume}px ${Math.max(2, volume / 4)}px rgba(239, 68, 68, 0.6)` : undefined,
+              transform: isRecording ? `scale(${1 + volume / 200})` : undefined
+            }}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-75 shadow-md flex-shrink-0 relative z-10 ${isRecording
+              ? 'bg-red-500 text-white'
               : isConnected
                 ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -510,26 +543,11 @@ const VoiceAgentRealtime = () => {
       </div>
 
       {/* Result Card */}
-      {eligibilityResult && (
-        <div className="mt-6 w-full max-w-2xl">
-          <LoanResultCard
-            result={{
-              eligibility_status: eligibilityResult.eligible ? "eligible" : "ineligible",
-              eligibility_score: eligibilityResult.score || 0,
-              risk_level: eligibilityResult.score > 0.7 ? "low_risk" : "medium_risk",
-              credit_tier: "Good", // Placeholder
-              confidence: 0.9
-            }}
-            applicationId={eligibilityResult.application_id}
-            extractedData={extractedData}
-          />
-        </div>
-      )}
 
       {/* Document Upload Modal */}
       {showDocumentUpload && (
         <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md h-[80%] overflow-hidden flex flex-col border border-gray-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md h-auto max-h-[85%] overflow-hidden flex flex-col border border-gray-200">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
               <h3 className="font-semibold text-gray-800">Verify Identity</h3>
               <button
@@ -539,17 +557,46 @@ const VoiceAgentRealtime = () => {
                 <X size={20} />
               </button>
             </div>
-            <div className="flex-1 p-4 overflow-y-auto">
+            <div
+              ref={modalScrollRef}
+              className="flex-1 p-4 overflow-y-auto"
+            >
               <FileUpload
                 applicationId={applicationId}
-                onUploadSuccess={(data) => {
+                previousUploads={uploadedFiles}
+                onUploadSuccess={(data, file) => {
                   toast.success("Verification Complete!");
-                  setShowDocumentUpload(false);
+                  // Add to list
+                  setUploadedFiles(prev => [...prev, {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    data: data
+                  }]);
+
+                  // Force scroll to top to keep Dropzone in view
+                  if (modalScrollRef.current) {
+                    modalScrollRef.current.scrollTop = 0;
+                  }
+
+                  // Keep modal open so user can upload more files if needed
                   if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(JSON.stringify({ type: 'document_uploaded', data: data }));
                   }
                 }}
               />
+            </div>
+            {/* Footer for multiple uploads */}
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col items-center">
+              <p className="text-xs text-gray-500 mb-3 text-center">
+                To upload another document, remove the current one using the 'X' button above.
+              </p>
+              <button
+                onClick={() => setShowDocumentUpload(false)}
+                className="w-full py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
+              >
+                Done / Finish Verification
+              </button>
             </div>
           </div>
         </div>

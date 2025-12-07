@@ -66,7 +66,7 @@ export const ocrAPI = {
   uploadDocument: (file) => {
     const formData = new FormData();
     formData.append("file", file);
-    return api.post(`/ocr/document`, formData, {
+    return api.post(`/verify/document`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
@@ -80,7 +80,7 @@ export const ocrAPI = {
   },
 
 
-  checkStatus: () => api.get("/ocr/status"),
+  checkStatus: () => api.get("/verify/status"),
 };
 
 
