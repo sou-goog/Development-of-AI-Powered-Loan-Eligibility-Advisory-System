@@ -169,7 +169,8 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             avg_balance: app.avg_balance ?? prev.avg_balance,
             bounced_transactions:
               app.bounced_transactions ?? prev.bounced_transactions,
-            account_age_months: app.account_age_months ?? prev.account_age_months,
+            account_age_months:
+              app.account_age_months ?? prev.account_age_months,
             total_liabilities: app.total_liabilities ?? prev.total_liabilities,
             region: app.region || prev.region,
             bank_name: app.bank_name || prev.bank_name,
@@ -177,7 +178,8 @@ const LoanApplicationForm = ({ onFormComplete }) => {
           toast.info(
             applicationId
               ? `Loaded application #${applicationId}. You can modify and submit.`
-              : "Loaded your last application details. You can modify and submit."
+              : "Loaded your last application details. You can modify and submit.",
+            { toastId: applicationId ? `app-${applicationId}` : "last-app-load" }
           );
         }
       } catch (e) {
@@ -228,8 +230,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     }
     if (missing.length > 0) {
       toast.error(
-        `Please complete the following: ${missing.slice(0, 4).join(", ")}${
-          missing.length > 4 ? "…" : ""
+        `Please complete the following: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "…" : ""
         }`
       );
       if (firstMissingStep) setCurrentStep(firstMissingStep);
@@ -288,6 +289,7 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     }
   };
 
+  // Step indicator removed (unused) to satisfy eslint `no-unused-vars`.
 
   const renderPersonalInfo = () => (
     <motion.div
@@ -362,11 +364,11 @@ const LoanApplicationForm = ({ onFormComplete }) => {
             Age *
           </label>
           <input
-            className="text-gray-800 bg-gray-100"
             type="number"
             name="age"
             value={formData.age}
             onChange={handleInputChange}
+            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-gray-100 placeholder-gray-500"
             placeholder="25"
             min="18"
             max="100"
@@ -745,8 +747,22 @@ const LoanApplicationForm = ({ onFormComplete }) => {
       <div className="flex justify-between items-center mb-10">
         {[1, 2, 3, 4].map((step) => (
           <div key={step} className="flex-1 flex flex-col items-center">
-            <div className={`w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg border-4 transition-all duration-300 ${currentStep === step ? 'bg-primary-600 text-white border-primary-400 scale-110 shadow-lg' : 'bg-white text-primary-600 border-gray-200 dark:bg-gray-800 dark:text-primary-300'}`}>{step}</div>
-            <span className={`mt-2 text-xs font-semibold ${currentStep === step ? 'text-primary-600' : 'text-gray-400 dark:text-gray-500'}`}>{['Personal','Employment','Loan','Financial'][step-1]}</span>
+            <div
+              className={`w-10 h-10 flex items-center justify-center rounded-full font-bold text-lg border-4 transition-all duration-300 ${currentStep === step
+                  ? "bg-primary-600 text-white border-primary-400 scale-110 shadow-lg"
+                  : "bg-white text-primary-600 border-gray-200 dark:bg-gray-800 dark:text-primary-300"
+                }`}
+            >
+              {step}
+            </div>
+            <span
+              className={`mt-2 text-xs font-semibold ${currentStep === step
+                  ? "text-primary-600"
+                  : "text-gray-400 dark:text-gray-500"
+                }`}
+            >
+              {["Personal", "Employment", "Loan", "Financial"][step - 1]}
+            </span>
           </div>
         ))}
       </div>

@@ -24,6 +24,9 @@ import Manager from "./pages/Manager";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
 import MiniChatbot from "./components/MiniChatbot";
 
+// ⭐ NEW PAGE IMPORT
+import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
+
 // Utils
 import { auth } from "./utils/auth";
 
@@ -96,6 +99,16 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <EligibilityResultPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ⭐ NEW LOAN REJECTION DASHBOARD ROUTE */}
+          <Route
+            path="/loan-rejection/:userId"
+            element={
+              <ProtectedRoute>
+                <LoanRejectionDashboard />
               </ProtectedRoute>
             }
           />

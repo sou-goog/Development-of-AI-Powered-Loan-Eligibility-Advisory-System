@@ -274,6 +274,19 @@ npm start
 # Will open http://localhost:3000 in browser
 ```
 
+<<<<<<< HEAD
+### 4. Default Login Credentials
+
+**Admin (Manager)**
+- **Email**: `admin@example.com`
+- **Password**: `admin123`
+
+**Applicant**
+- **Email**: `user@example.com`
+- **Password**: `user123`
+
+=======
+>>>>>>> origin/main
 ## 🔑 Environment Variables
 
 - Backend: copy `backend/.env.example` to `backend/.env` and adjust.

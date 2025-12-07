@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authAPI } from "../utils/api";
+import { auth } from "../utils/auth";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -14,15 +15,43 @@ function Login() {
     setError("");
 
     try {
-      // Call backend login API
-      const res = await authAPI.login(email, password);
+      // Use the authAPI to login against the backend
+      const response = await authAPI.login(email, password);
 
-      // NOTE: backend returns → { access_token, token_type, user }
-      localStorage.setItem("authToken", res.data.access_token);
+      // Save token and user info
+      auth.setToken(response.data.access_token);
+      auth.setUser(response.data.user);
 
-      navigate("/dashboard");
+      // Navigate based on role
+      if (response.data.user.role === "applicant") {
+        navigate("/apply");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
-      setError("Invalid email or password. Try again.");
+      console.error("Login failed", err);
+      const detail = err.response?.data?.detail;
+      let msg = "Invalid email or password. Try again.";
+
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation error list
+        const firstError = detail[0];
+        if (firstError?.msg) {
+          msg = firstError.msg;
+          if (firstError.loc) {
+            const field = firstError.loc[firstError.loc.length - 1];
+            msg = `${field}: ${msg}`;
+          }
+        } else {
+          msg = JSON.stringify(detail);
+        }
+      } else if (detail) {
+        msg = JSON.stringify(detail);
+      }
+
+      setError(msg);
     }
   };
 
@@ -75,6 +104,15 @@ function Login() {
             Login
           </button>
         </form>
+
+        <p className="text-center text-slate-400 text-xs mt-4">
+          Username: <b>admin@example.com</b> <br />
+          Password: <b>admin123</b>
+          <br />
+          <br />
+          Applicant: <b>user@example.com</b> <br />
+          Password: <b>user123</b>
+        </p>
       </div>
     </div>
   );

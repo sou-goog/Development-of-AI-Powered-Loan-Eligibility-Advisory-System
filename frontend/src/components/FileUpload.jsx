@@ -12,7 +12,7 @@ import {
   Loader,
 } from "lucide-react";
 
-const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
+const FileUpload = ({ onUploadSuccess, applicationId, footer, previousUploads = [] }) => {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -62,7 +62,7 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
         setTimeout(() => {
           toast.success("Document uploaded and verified successfully!");
           if (onUploadSuccess) {
-            onUploadSuccess(response.data);
+            onUploadSuccess(response.data, file);
           }
         }, 500);
       } catch (error) {
@@ -143,24 +143,26 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
   };
 
   return (
-    <div className="w-full h-full flex flex-col min-h-0">
+    <div className="w-full flex flex-col min-h-0">
       {applicationId && (
         <div className="mb-3 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
           Uploads will be linked to application #{applicationId}.
         </div>
       )}
+
+      {/* Previous Uploads List */}
+
       {/* Upload Zone */}
       <motion.div
         {...getRootProps()}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
-        className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300 ${
-          isDragActive && !isDragReject
-            ? "border-primary-400 bg-primary-50 shadow-lg"
-            : isDragReject
+        className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-300 ${isDragActive && !isDragReject
+          ? "border-primary-400 bg-primary-50 shadow-lg"
+          : isDragReject
             ? "border-red-400 bg-red-50"
             : "border-gray-300 hover:border-primary-400 hover:bg-gray-50"
-        }`}
+          }`}
       >
         <input {...getInputProps()} />
 
@@ -209,9 +211,8 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
                 className="mb-4"
               >
                 <Upload
-                  className={`w-16 h-16 ${
-                    isDragActive ? "text-primary-600" : "text-gray-400"
-                  }`}
+                  className={`w-16 h-16 ${isDragActive ? "text-primary-600" : "text-gray-400"
+                    }`}
                 />
               </motion.div>
 
@@ -324,7 +325,7 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="mt-4 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl flex-1 min-h-0"
+            className="mt-4 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl min-h-0"
           >
             <div className="flex items-center space-x-2 mb-4">
               <CheckCircle className="w-5 h-5 text-green-600" />
@@ -434,6 +435,28 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Previous Uploads List - Moved to bottom for stability */}
+      {previousUploads.length > 0 && (
+        <div className="mt-6 border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Upload History</p>
+          <div className="space-y-2">
+            {previousUploads.map((file, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex items-center space-x-3 overflow-hidden">
+                  <div className="bg-white p-1 rounded-md border border-gray-100">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                    <p className="text-xs text-blue-600">Verified</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Footer (e.g., action button) rendered below extracted data */}
       {extractedData && footer && <div className="mt-4">{footer}</div>}

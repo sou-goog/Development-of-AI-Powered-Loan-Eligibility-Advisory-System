@@ -49,35 +49,76 @@ export default function AuthPage() {
 }
 
 // Segmented OTP input component (6 digits)
-const OTPInput = ({ value, onChange }) => {
-  const inputs = Array.from({ length: 6 });
-  const refs = useRef(inputs.map(() => React.createRef()));
+const OTPInput = ({ value = "", onChange }) => {
+  const length = 6;
+  const inputs = Array.from({ length });
+  const refs = React.useRef([]);
 
-  const handleChange = (idx, val) => {
-    const digit = val.replace(/\D/g, "").slice(0, 1);
-    const chars = (value || "").padEnd(6, "").split("");
-    chars[idx] = digit;
-    const next = chars.join("").slice(0, 6);
+  // Ensure refs array is populated
+  if (refs.current.length !== length) {
+    refs.current = Array(length).fill().map((_, i) => refs.current[i] || React.createRef());
+  }
+
+  const handleChange = (idx, e) => {
+    const val = e.target.value;
+    // Allow only numbers
+    if (!/^\d*$/.test(val)) return;
+
+    // Handle single digit input
+    const char = val.slice(-1);
+
+    // Construct new value
+    // We treat the value as a string of length 6, padded with spaces if needed for internal logic,
+    // but we store the clean string.
+    // Actually, simpler: split current value into array, update index, join.
+    // But we must handle "holes" if user clicks arbitrary index.
+
+    let chars = value.split("");
+    // Pad with empty strings if current value is shorter than index
+    while (chars.length < length) chars.push("");
+
+    chars[idx] = char;
+
+    // Join and trim ONLY if we want to remove trailing empty slots? 
+    // No, OTP usually preserves order. 
+    // But if we have "1  4", is that valid? 
+    // Let's just join and send.
+    const next = chars.join("").slice(0, length);
     onChange(next);
-    if (digit && idx < 5) refs.current[idx + 1].current?.focus();
+
+    // Auto-focus next input if character was entered
+    if (char && idx < length - 1) {
+      refs.current[idx + 1].current?.focus();
+    }
   };
 
   const handleKeyDown = (idx, e) => {
-    if (e.key === "Backspace" && !((value || "")[idx] || "")) {
-      if (idx > 0) refs.current[idx - 1].current?.focus();
+    if (e.key === "Backspace") {
+      if (!value[idx]) {
+        // If current is empty, move back and delete
+        if (idx > 0) {
+          const prev = refs.current[idx - 1].current;
+          prev?.focus();
+          // Optional: delete previous char immediately?
+          // Standard behavior is usually focus back, then user hits backspace again.
+        }
+      } else {
+        // If current has value, it will be deleted by onChange (empty string)
+        // But we might want to handle it here if we want to move focus?
+        // Default input behavior handles deletion.
+      }
     }
     if (e.key === "ArrowLeft" && idx > 0)
       refs.current[idx - 1].current?.focus();
-    if (e.key === "ArrowRight" && idx < 5)
+    if (e.key === "ArrowRight" && idx < length - 1)
       refs.current[idx + 1].current?.focus();
   };
 
-  useEffect(() => {
-    // Autofocus first empty cell
-    const firstEmpty = (value || "").indexOf("");
-    if (firstEmpty === -1 || firstEmpty > 5) return;
-    refs.current[firstEmpty]?.current?.focus();
-  }, [value]);
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
+    if (pasted) onChange(pasted);
+  };
 
   return (
     <div className="flex items-center justify-center gap-2">
@@ -89,10 +130,11 @@ const OTPInput = ({ value, onChange }) => {
           inputMode="numeric"
           pattern="[0-9]*"
           maxLength={1}
-          value={(value || "")[i] || ""}
-          onChange={(e) => handleChange(i, e.target.value)}
+          value={value[i] || ""}
+          onChange={(e) => handleChange(i, e)}
           onKeyDown={(e) => handleKeyDown(i, e)}
-          className="w-12 h-12 text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-xl"
+          onPaste={handlePaste}
+          className="w-12 h-12 text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-xl text-gray-900 bg-white"
         />
       ))}
     </div>
@@ -246,8 +288,8 @@ const LoginForm = ({ onSwitchToSignup }) => {
             {resendCooldown > 0
               ? `Resend in ${resendCooldown}s`
               : otpSending
-              ? "Sending..."
-              : "Resend Code"}
+                ? "Sending..."
+                : "Resend Code"}
           </button>
           <button
             type="button"
