@@ -34,9 +34,15 @@ from dotenv import load_dotenv
 
 # Cloud APIs
 from groq import AsyncGroq
-from deepgram import DeepgramClient, AsyncDeepgramClient, LiveTranscriptionEvents
+from deepgram import DeepgramClient, AsyncDeepgramClient
 
-# class LiveTranscriptionEvents: (Removed to use SDK constants)
+class LiveTranscriptionEvents:
+    Transcript = "Results"
+    Error = "Error"
+    Close = "Close"
+    Metadata = "Metadata"
+    SpeechStarted = "SpeechStarted"
+    UtteranceEnd = "UtteranceEnd"
 
 # Try to import optional services
 try:
