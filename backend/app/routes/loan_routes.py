@@ -18,6 +18,36 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 ml_service = MLModelService()
+
+# Manager: Get all applications with document info
+@router.get("/applications/all", response_model=None)
+async def get_all_applications(db: Session = Depends(get_db)):
+    """Return all loan applications for manager view, including uploaded documents and extracted data."""
+    apps = db.query(LoanApplication).order_by(LoanApplication.created_at.desc()).all()
+    result = []
+    for app in apps:
+        extracted = app.extracted_data if isinstance(app.extracted_data, dict) else {}
+        uploaded_docs = extracted.get("uploaded_documents", [])
+        # Normalize uploaded_docs to list of dicts with id and (optionally) file_path
+        norm_docs = []
+        for doc in uploaded_docs:
+            if isinstance(doc, dict):
+                norm_docs.append(doc)
+            else:
+                norm_docs.append({"id": doc})
+        result.append({
+            "id": app.id,
+            "full_name": app.full_name,
+            "email": app.email,
+            "phone": app.phone,
+            "created_at": app.created_at,
+            "approval_status": app.approval_status,
+            "document_verified": app.document_verified,
+            "uploaded_documents": norm_docs,
+            "extracted_data": extracted,
+            "report_path": getattr(app, "report_path", None),
+        })
+    return {"applications": result}
 def _get_current_user(request: Request, db: Session) -> User | None:
     """Extract current user from Authorization bearer token."""
     try:
@@ -318,14 +348,11 @@ async def predict_eligibility(request: LoanPredictionRequest):
             "Loan_to_Value_Ratio": request.Loan_to_Value_Ratio
         }
         
-        # Get prediction
+        # Get prediction (all models)
         prediction = ml_service.predict_eligibility(applicant_data)
-        
-        logger.info(f"Loan prediction generated: {prediction['eligibility_status']}")
-        
+        logger.info(f"Loan prediction generated: {prediction['models']}")
         return {
-            "eligibility_score": prediction["eligibility_score"],
-            "eligibility_status": prediction["eligibility_status"],
+            "models": prediction["models"],
             "risk_level": prediction["risk_level"],
             "recommendations": prediction["recommendations"],
             "credit_tier": prediction["credit_tier"],
@@ -418,12 +445,13 @@ async def predict_for_application(
         
         # Get prediction
         prediction = ml_service.predict_eligibility(applicant_data)
-        
-        # Update application
-        app.eligibility_score = prediction["eligibility_score"]
-        app.eligibility_status = prediction["eligibility_status"]
+
+        # Update application using XGBoost model results
+        xgb = prediction.get("models", {}).get("xgboost", {})
+        app.eligibility_score = xgb.get("eligibility_score")
+        app.eligibility_status = xgb.get("eligibility_status")
         db.commit()
-        
+
         # Auto-generate report after successful prediction
         try:
             report_service = ReportService()
@@ -456,8 +484,12 @@ async def predict_for_application(
             logger.warning(f"Report generation after prediction skipped: {rep_e}")
 
         logger.info(f"Prediction updated for application {application_id}")
-        
-        return prediction
+
+        # Return prediction and full_name for dashboard personalization
+        response = prediction.copy() if isinstance(prediction, dict) else {}
+        response["full_name"] = app.full_name
+        response["app_data"] = app_data
+        return response
     
     except HTTPException:
         raise

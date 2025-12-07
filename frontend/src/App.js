@@ -1,3 +1,6 @@
+// Redesigned App.js with cleaner structure, layout wrappers, animated transitions,
+// and ready for modern UI (sidebar + topbar). You can now plug redesigned pages/components.
+
 import React from "react";
 import {
   BrowserRouter as Router,
@@ -8,27 +11,18 @@ import {
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+
 import MainLayout from "./layout/MainLayout";
+import UserDashboard from "./pages/UserDashboard";
 
 // Pages
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
 import ApplyPage from "./pages/ApplyPage";
-
-// Dashboard pages
-import Login from "./pages/Login";
-import MainDashboard from "./pages/MainDashboard";
-import LoanAnalytics from "./pages/LoanAnalytics";
-import MLPerformance from "./pages/MLPerformance";
-import VoiceAnalytics from "./pages/VoiceAnalytics";
-import ApplicationsTable from "./pages/ApplicationsTable";
-import Transcripts from "./pages/Transcripts";
-import SystemSettings from "./pages/SystemSettings";
-import ProjectOverview from "./pages/ProjectOverview";
-import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
-
-// Voice agent
-import VoiceAgentRealtime from "./components/VoiceAgentRealtime_v2";
+import Verification from "./pages/Verification";
+import Manager from "./pages/Manager";
+import EligibilityResultPage from "./pages/EligibilityResultPage";
+import MiniChatbot from "./components/MiniChatbot";
 
 // Utils
 import { auth } from "./utils/auth";
@@ -65,43 +59,74 @@ export default function App() {
             }
           />
 
-        {/* Application Page */}
-        <Route path="/apply" element={<ApplyPage />} />
-
-        {/* Public Login (Applicant Login) */}
-        <Route path="/auth" element={<AuthPage />} />
-
-        {/* Admin Login */}
-        <Route path="/login" element={<Login />} />
-
-        {/* DASHBOARD ROUTES */}
-        <Route path="/admin/dashboard" element={<MainDashboard />} />
-        <Route path="/admin/loan-analytics" element={<LoanAnalytics />} />
-        <Route path="/admin/ml-performance" element={<MLPerformance />} />
-        <Route path="/admin/voice-analytics" element={<VoiceAnalytics />} />
-        <Route path="/admin/applications" element={<ApplicationsTable />} />
-        <Route path="/admin/transcripts" element={<Transcripts />} />
-        <Route path="/admin/settings" element={<SystemSettings />} />
-        <Route path="/admin/overview" element={<ProjectOverview />} />
-        <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
-
-        {/* Voice agent */}
-        <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
-
-        {/* 404 → redirect home */}
-        <Route path="*" element={<Navigate to="/" />} />
-
-          {/* Loan Rejection Details */}
           <Route
-            path="/loan-rejection/:userId"
+            path="/apply"
             element={
               <ProtectedRoute>
-                <LoanRejectionDashboard />
+                <ApplyPage />
               </ProtectedRoute>
             }
           />
 
-         
+          <Route
+            path="/apply-chat"
+            element={
+              <ProtectedRoute>
+                <div className="p-4">
+                  {/* Only MiniChatbot and VoiceAgentButton should be present. */}
+                  <MiniChatbot />
+                  {/* VoiceAgentButton is already included in MiniChatbot, so no need to add separately unless required elsewhere. */}
+                </div>
+              </ProtectedRoute>
+            }
+          />
+
+
+          <Route
+            path="/verify"
+            element={
+              <ProtectedRoute>
+                <Verification />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/eligibility-result"
+            element={
+              <ProtectedRoute>
+                <EligibilityResultPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/manager"
+            element={
+              <ProtectedRoute requireManager={true}>
+                <Manager />
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* Public Dashboard route for sharing */}
+          <Route
+            path="/dashboard"
+            element={<UserDashboard />}
+          />
+
+          {/* User Dashboard route (protected, for logged-in users) */}
+          <Route
+            path="/user-dashboard"
+            element={
+              <ProtectedRoute>
+                <UserDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
         <ToastContainer position="top-right" autoClose={4000} />

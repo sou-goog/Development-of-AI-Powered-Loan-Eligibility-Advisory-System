@@ -15,17 +15,12 @@ logger = get_logger(__name__)
 
 
 class MLModelService:
-    """Service for loan eligibility prediction using trained XGBoost model"""
+    """Service for loan eligibility prediction using XGBoost, Decision Tree, and Random Forest models"""
 
     def __init__(self, model_path: Optional[str] = None):
-        """
-        Initialize ML service with trained model
-
-        Args:
-            model_path: Path to the pickled model file. If None, resolve automatically.
-        """
         self.model_path = model_path
-        self.model = None
+        self.models = {}
+        self.model_accuracies = {}
         self.scaler = None
         self.label_encoders = {}
         self.x_columns: list[str] | None = None
@@ -54,7 +49,7 @@ class MLModelService:
             'Total_Liabilities', 'Debt_to_Income_Ratio'
         ]
 
-        self._load_model()
+        self._load_models()
 
     def _resolve_model_dir(self) -> Path:
         """Resolve the directory where model artifacts are stored.
@@ -87,50 +82,33 @@ class MLModelService:
         fallback = (Path(__file__).resolve().parents[1] / "models")
         return fallback
 
-    def _load_model(self):
-        """Load the trained model and preprocessing objects from pickle files."""
+    def _load_models(self):
+        """Load all trained models and preprocessing objects from pickle files."""
         model_dir = self._resolve_model_dir()
 
-        # Possible model filenames the user might have added
-        candidate_models = [
-            "loan_model.pkl",
-            "loan_xgboost_model.pkl",
-            "model.pkl",
-        ]
+        model_files = {
+            "xgboost": "loan_xgboost_model.pkl",
+            "decision_tree": "loan_decision_tree_model.pkl",
+            "random_forest": "loan_random_forest_model.pkl",
+        }
+        for key, fname in model_files.items():
+            path = model_dir / fname
+            if path.exists():
+                try:
+                    with open(path, "rb") as f:
+                        self.models[key] = pickle.load(f)
+                    logger.info(f"{key} model loaded from {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load {key} model: {e}")
+            else:
+                logger.warning(f"Model file {fname} not found in {model_dir}")
 
-        # 1) If an explicit model_path exists, use it; otherwise search candidates
-        model_file: Path | None = None
-        if self.model_path and Path(self.model_path).exists():
-            model_file = Path(self.model_path)
-        else:
-            for name in candidate_models:
-                p = model_dir / name
-                if p.exists():
-                    model_file = p
-                    break
-
-        if model_file and model_file.exists():
-            try:
-                with open(model_file, "rb") as f:
-                    self.model = pickle.load(f)
-                self.model_path = str(model_file)
-                logger.info(f"Model loaded from {model_file}")
-            except Exception as e:
-                logger.warning(f"Failed to load model from {model_file}: {e}. Using dummy model.")
-                self.model = None
-        else:
-            logger.warning(
-                f"No model file found. Looked for {candidate_models} in {model_dir}. Using dummy model."
-            )
-            self.model = None
-
-        # Load feature columns description if available (preferred over scaler)
+        # Load feature columns
         xcols_path = model_dir / "X_columns.pkl"
         if xcols_path.exists():
             try:
                 with open(xcols_path, "rb") as f:
                     self.x_columns = pickle.load(f)
-                # Normalize to plain python list of strings
                 if hasattr(self.x_columns, 'tolist'):
                     self.x_columns = list(self.x_columns)
                 logger.info(f"X_columns loaded from {xcols_path} with {len(self.x_columns)} features")
@@ -138,7 +116,19 @@ class MLModelService:
                 logger.warning(f"Failed to load X_columns from {xcols_path}: {e}.")
                 self.x_columns = None
 
-        # Load preprocessing artifacts (legacy path)
+        # Load model accuracies
+        acc_path = model_dir / "model_accuracies.pkl"
+        if acc_path.exists():
+            try:
+                with open(acc_path, "rb") as f:
+                    self.model_accuracies = pickle.load(f)
+                logger.info(f"Model accuracies loaded from {acc_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load model accuracies: {e}")
+        else:
+            logger.warning(f"Model accuracies file not found: {acc_path}")
+
+        # (Scaler/encoder loading unchanged)
         scaler_candidates = [
             model_dir / "scaler.pkl",
             model_dir / "feature_scaler.pkl",
@@ -148,7 +138,6 @@ class MLModelService:
 
         scaler_path = next((p for p in scaler_candidates if p.exists()), None)
         if self.x_columns is not None:
-            # When X_columns is provided, we assume features are already aligned; no scaling
             self.scaler = None
         else:
             if scaler_path and scaler_path.exists():
@@ -180,35 +169,7 @@ class MLModelService:
     def predict_eligibility(self, applicant_data: Dict) -> Dict:
         """
         Predict loan eligibility based on applicant data with 23 features
-        
-        Args:
-            applicant_data: Dictionary with applicant information including:
-                - Age: int
-                - Gender: str (Male/Female)
-                - Marital_Status: str (Single/Married/Divorced)
-                - Monthly_Income: float
-                - Employment_Type: str (Salaried/Self-Employed/Business)
-                - Loan_Amount_Requested: float
-                - Loan_Tenure_Years: int
-                - Credit_Score: int
-                - Region: str (Urban/Semi-Urban/Rural)
-                - Loan_Purpose: str (Personal/Home/Personal Loan/Education/Car)
-                - Dependents: int
-                - Existing_EMI: float
-                - Salary_Credit_Frequency: str (Monthly/Quarterly/Half-Yearly/Yearly)
-                - Total_Withdrawals: float (from OCR)
-                - Total_Deposits: float (from OCR)
-                - Avg_Balance: float (from OCR)
-                - Bounced_Transactions: int (from OCR)
-                - Account_Age_Months: int (from OCR)
-                - Total_Liabilities: float (calculated)
-                - Debt_to_Income_Ratio: float (calculated)
-                - Income_Stability_Score: float (calculated)
-                - Credit_Utilization_Ratio: float (calculated)
-                - Loan_to_Value_Ratio: float (calculated)
-        
-        Returns:
-            Dictionary with prediction results
+        Returns a dict with model results and risk info. Adds warnings if models/features are missing.
         """
         try:
             # Auto-calculate DTI if not provided or zero
@@ -233,64 +194,72 @@ class MLModelService:
                 dti_ratio = (total_monthly_debt / monthly_income) if monthly_income > 0 else 0.0
                 dti_ratio = float(max(0.0, min(dti_ratio, 5.0)))
                 applicant_data['Debt_to_Income_Ratio'] = dti_ratio
+
+            # Check for model/feature loading issues
+            warnings = []
+            if not self.models or 'xgboost' not in self.models:
+                warnings.append('XGBoost model is not loaded. Prediction is not possible.')
+            if not self.x_columns:
+                warnings.append('Model feature columns (X_columns) are missing. Prediction may be invalid.')
+
             # Prepare features with preprocessing
-            if self.x_columns is not None and self.model is not None:
+            if self.x_columns and 'xgboost' in self.models:
                 features_df = self._prepare_features_v2(applicant_data)
-                # Optional compatibility check
-                try:
-                    n_in = getattr(self.model, 'n_features_in_', None)
-                    if n_in and n_in != len(self.x_columns):
-                        logger.warning(
-                            f"Model expects {n_in} features, but X_columns has {len(self.x_columns)}. Proceeding anyway."
-                        )
-                except Exception:
-                    pass
             else:
                 features_df = self._prepare_features(applicant_data)
-            
-            # Make prediction (use dummy if model not loaded)
-            if self.model:
-                if self.x_columns is not None:
-                    # Use aligned DataFrame directly
-                    X = features_df[self.x_columns]
-                    eligibility_score = float(self.model.predict_proba(X)[0][1])
-                else:
-                    # Legacy path: scale numerics and concat encoded categoricals
-                    numerical_data = features_df[self.numerical_features]
-                    if hasattr(self.scaler, 'transform'):
-                        scaled_numerical = self.scaler.transform(numerical_data)
+
+            # Make predictions for all models
+            model_results = {}
+            for key, model in self.models.items():
+                try:
+                    if self.x_columns:
+                        X = features_df[self.x_columns]
+                        score = float(model.predict_proba(X)[0][1])
                     else:
-                        scaled_numerical = numerical_data.values
-                    features_processed = np.column_stack([
-                        scaled_numerical,
-                        features_df[self.categorical_features].values
-                    ])
-                    eligibility_score = float(self.model.predict_proba(features_processed)[0][1])
-            else:
-                # Dummy prediction logic for testing when no model is available
-                eligibility_score = self._dummy_predict(applicant_data)
-                logger.warning("Using dummy prediction - no trained model available")
-            
-            # Determine eligibility status and risk level
-            eligibility_status = "eligible" if eligibility_score >= 0.5 else "ineligible"
-            risk_level = self._assess_risk_level(applicant_data, eligibility_score)
-            
-            # Generate recommendations
-            recommendations = self._generate_recommendations(applicant_data, eligibility_score)
-            
+                        numerical_data = features_df[self.numerical_features]
+                        if hasattr(self.scaler, 'transform'):
+                            scaled_numerical = self.scaler.transform(numerical_data)
+                        else:
+                            scaled_numerical = numerical_data.values
+                        features_processed = np.column_stack([
+                            scaled_numerical,
+                            features_df[self.categorical_features].values
+                        ])
+                        score = float(model.predict_proba(features_processed)[0][1])
+                    status = "eligible" if score >= 0.5 else "ineligible"
+                    acc = self.model_accuracies.get(key, {}).get("test", None)
+                    model_results[key] = {
+                        "eligibility_score": round(score, 3),
+                        "eligibility_status": status,
+                        "accuracy": round(acc, 3) if acc is not None else None
+                    }
+                except Exception as e:
+                    logger.warning(f"Prediction failed for model {key}: {e}")
+                    model_results[key] = {
+                        "eligibility_score": 0.0,
+                        "eligibility_status": "error",
+                        "accuracy": None,
+                        "error": str(e)
+                    }
+
+            # Use XGBoost for risk, recommendations, etc.
+            xgb_score = model_results.get("xgboost", {}).get("eligibility_score", 0)
+            eligibility_status = model_results.get("xgboost", {}).get("eligibility_status", "ineligible")
+            risk_level = self._assess_risk_level(applicant_data, xgb_score)
+            recommendations = self._generate_recommendations(applicant_data, xgb_score)
             result = {
-                "eligibility_score": round(eligibility_score, 3),
-                "eligibility_status": eligibility_status,
+                "models": model_results,
                 "risk_level": risk_level,
                 "recommendations": recommendations,
                 "credit_tier": self._get_credit_tier(applicant_data.get('Credit_Score', 600)),
                 "debt_to_income_ratio": applicant_data.get('Debt_to_Income_Ratio', 0),
-                "confidence": round(min(eligibility_score * 1.2, 1.0), 2)  # Confidence score
+                "confidence": round(min(xgb_score * 1.2, 1.0), 2),
+                "warnings": warnings
             }
-            
-            logger.info(f"Loan prediction generated: {eligibility_status}")
+            logger.info(f"Loan prediction generated: {model_results}")
+            if warnings:
+                logger.warning(f"Loan prediction warnings: {warnings}")
             return result
-        
         except Exception as e:
             logger.error(f"Error predicting eligibility: {str(e)}")
             raise

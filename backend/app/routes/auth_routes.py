@@ -2,7 +2,7 @@
 Authentication Routes
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.models.database import get_db, User
 from app.models.schemas import UserRegister, UserLogin, TokenResponse, UserResponse
@@ -93,27 +93,30 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user(token: str, db: Session = Depends(get_db)):
-    """Get current user information"""
+async def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Get current user information from Authorization header"""
     from app.utils.security import decode_token
-    
     try:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid Authorization header"
+            )
+        token = auth_header.split(" ", 1)[1].strip()
         token_data = decode_token(token)
         if not token_data:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
             )
-        
         user = db.query(User).filter(User.email == token_data["email"]).first()
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found"
             )
-        
         return user
-    
     except HTTPException:
         raise
     except Exception as e:
