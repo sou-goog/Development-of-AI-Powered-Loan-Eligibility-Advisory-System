@@ -1,10 +1,18 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { authAPI } from "../utils/api";
 import { auth } from "../utils/auth";
 import { toast } from "react-toastify";
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Shield } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Mail,
+  Lock,
+  User,
+  ArrowRight,
+  Shield,
+} from "lucide-react";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,9 +27,13 @@ export default function AuthPage() {
         <div className="text-center mb-8">
           <Shield className="mx-auto w-12 h-12 text-primary-600 mb-2" />
           <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2">
-            {isLogin ? "Sign In to AI Loan System" : "Sign Up for AI Loan System"}
+            {isLogin
+              ? "Sign In to AI Loan System"
+              : "Sign Up for AI Loan System"}
           </h1>
-          <p className="text-gray-500 dark:text-gray-300">Secure, fast, and beautiful authentication experience.</p>
+          <p className="text-gray-500 dark:text-gray-300">
+            Secure, fast, and beautiful authentication experience.
+          </p>
         </div>
         {isLogin ? (
           <LoginForm onSwitchToSignup={() => setIsLogin(false)} />
@@ -30,14 +42,22 @@ export default function AuthPage() {
         )}
         <div className="mt-6 text-center">
           {isLogin ? (
-            <span className="text-gray-600 dark:text-gray-300">Don't have an account?{' '}
-              <button className="text-primary-600 hover:underline font-semibold" onClick={() => setIsLogin(false)}>
+            <span className="text-gray-600 dark:text-gray-300">
+              Don't have an account?{" "}
+              <button
+                className="text-primary-600 hover:underline font-semibold"
+                onClick={() => setIsLogin(false)}
+              >
                 Sign up
               </button>
             </span>
           ) : (
-            <span className="text-gray-600 dark:text-gray-300">Already have an account?{' '}
-              <button className="text-primary-600 hover:underline font-semibold" onClick={() => setIsLogin(true)}>
+            <span className="text-gray-600 dark:text-gray-300">
+              Already have an account?{" "}
+              <button
+                className="text-primary-600 hover:underline font-semibold"
+                onClick={() => setIsLogin(true)}
+              >
                 Sign in
               </button>
             </span>
@@ -56,7 +76,9 @@ const OTPInput = ({ value = "", onChange }) => {
 
   // Ensure refs array is populated
   if (refs.current.length !== length) {
-    refs.current = Array(length).fill().map((_, i) => refs.current[i] || React.createRef());
+    refs.current = Array(length)
+      .fill()
+      .map((_, i) => refs.current[i] || React.createRef());
   }
 
   const handleChange = (idx, e) => {
@@ -79,9 +101,9 @@ const OTPInput = ({ value = "", onChange }) => {
 
     chars[idx] = char;
 
-    // Join and trim ONLY if we want to remove trailing empty slots? 
-    // No, OTP usually preserves order. 
-    // But if we have "1  4", is that valid? 
+    // Join and trim ONLY if we want to remove trailing empty slots?
+    // No, OTP usually preserves order.
+    // But if we have "1  4", is that valid?
     // Let's just join and send.
     const next = chars.join("").slice(0, length);
     onChange(next);
@@ -116,7 +138,10 @@ const OTPInput = ({ value = "", onChange }) => {
 
   const handlePaste = (e) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
+    const pasted = e.clipboardData
+      .getData("text")
+      .replace(/\D/g, "")
+      .slice(0, length);
     if (pasted) onChange(pasted);
   };
 
@@ -156,13 +181,16 @@ const LoginForm = ({ onSwitchToSignup }) => {
   // NEW: login role selector
   const [selectedRole, setSelectedRole] = useState("applicant");
 
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const response = await authAPI.login(formData.email, formData.password, selectedRole);
+      const response = await authAPI.login(
+        formData.email,
+        formData.password,
+        selectedRole
+      );
       const { access_token, token, user } = response.data || {};
       const finalToken = access_token || token;
       if (!finalToken || !user)
@@ -288,8 +316,8 @@ const LoginForm = ({ onSwitchToSignup }) => {
             {resendCooldown > 0
               ? `Resend in ${resendCooldown}s`
               : otpSending
-                ? "Sending..."
-                : "Resend Code"}
+              ? "Sending..."
+              : "Resend Code"}
           </button>
           <button
             type="button"
@@ -369,10 +397,12 @@ const LoginForm = ({ onSwitchToSignup }) => {
 
       {/* Role Selector */}
       <div className="space-y-2">
-        <label className="block text-sm font-semibold text-gray-700">Login as</label>
+        <label className="block text-sm font-semibold text-gray-700">
+          Login as
+        </label>
         <select
           value={selectedRole}
-          onChange={e => setSelectedRole(e.target.value)}
+          onChange={(e) => setSelectedRole(e.target.value)}
           className="input-field w-full"
         >
           <option value="applicant">Applicant</option>
@@ -717,5 +747,3 @@ const SignupForm = ({ onSwitchToLogin }) => {
     </motion.form>
   );
 };
-
-

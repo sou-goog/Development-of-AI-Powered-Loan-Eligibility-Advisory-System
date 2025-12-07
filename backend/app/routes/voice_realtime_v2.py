@@ -34,9 +34,15 @@ from dotenv import load_dotenv
 
 # Cloud APIs
 from groq import AsyncGroq
-from deepgram import DeepgramClient, AsyncDeepgramClient, LiveTranscriptionEvents
+from deepgram import DeepgramClient, AsyncDeepgramClient
 
-# class LiveTranscriptionEvents: (Removed to use SDK constants)
+# For newer deepgram versions, LiveTranscriptionEvents may not be directly available
+try:
+    from deepgram import LiveTranscriptionEvents
+except ImportError:
+    # Define a placeholder if not available in newer versions
+    class LiveTranscriptionEvents:
+        pass
 
 # Try to import optional services
 try:
@@ -70,12 +76,12 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 if not GROQ_API_KEY or not DEEPGRAM_API_KEY:
     logger.error("Missing GROQ_API_KEY or DEEPGRAM_API_KEY in .env")
 
-# Initialize Clients
-groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+# Initialize Clients (optional - only if API keys are provided)
+groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # Sync client for TTS (legacy/fallback)
-deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY) if DEEPGRAM_API_KEY else None
 # Async client for Real-time STT streaming
-deepgram_client_async = AsyncDeepgramClient(api_key=DEEPGRAM_API_KEY)
+deepgram_client_async = AsyncDeepgramClient(api_key=DEEPGRAM_API_KEY) if DEEPGRAM_API_KEY else None
 
 # System prompt
 LOAN_AGENT_PROMPT = """You are LoanVoice, a friendly and efficient voice assistant for loan eligibility assessment.
