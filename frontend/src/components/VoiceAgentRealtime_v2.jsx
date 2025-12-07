@@ -21,7 +21,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Phone, PhoneOff, Volume2, VolumeX, X } from 'lucide-react';
+import { Phone, PhoneOff, X } from 'lucide-react';
 import FileUpload from './FileUpload';
 import LoanResultCard from './LoanResultCard';
 import { toast } from 'react-toastify';
@@ -31,7 +31,7 @@ const VoiceAgentRealtime = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [error, setError] = useState(null);
+  // const [error, setError] = useState(null); // Replaced with toast
 
   // Conversation state
   const [partialTranscript, setPartialTranscript] = useState('');
@@ -42,15 +42,13 @@ const VoiceAgentRealtime = () => {
   const [extractedData, setExtractedData] = useState({});
   const [eligibilityResult, setEligibilityResult] = useState(null);
   const [showDocumentUpload, setShowDocumentUpload] = useState(false);
-  const [applicationId, setApplicationId] = useState(null);
+  // const [applicationId, setApplicationId] = useState(null); // Removed unused state
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
   // Volume state for visualizer
   const [volume, setVolume] = useState(0);
 
-  // Event Log for debugging
-  const [eventLog, setEventLog] = useState([]);
-  const addLog = (msg) => setEventLog(prev => [`${new Date().toLocaleTimeString().split(' ')[0]} ${msg}`, ...prev].slice(0, 3));
+  // Event Log removed (unused)
 
   // Refs for persistent connections
   const wsRef = useRef(null);
@@ -213,7 +211,7 @@ const VoiceAgentRealtime = () => {
         break;
 
       case 'error':
-        setError(data);
+        toast.error(data);
         break;
 
       default:
@@ -234,7 +232,7 @@ const VoiceAgentRealtime = () => {
       ws.onopen = () => {
         console.log('WebSocket connected');
         setIsConnected(true);
-        setError(null);
+        // setError(null);
       };
 
       ws.onmessage = (event) => {
@@ -248,7 +246,8 @@ const VoiceAgentRealtime = () => {
 
       ws.onerror = (err) => {
         console.error('WebSocket error:', err);
-        setError('Connection error. Please check backend is running.');
+        // Toast handled in catch or general error
+        console.error('Connection error. Please check backend is running.');
       };
 
       ws.onclose = () => {
@@ -264,7 +263,7 @@ const VoiceAgentRealtime = () => {
       wsRef.current = ws;
     } catch (err) {
       console.error('Failed to create WebSocket:', err);
-      setError('Failed to connect to voice agent');
+      toast.error('Failed to connect to voice agent');
     }
   }, [handleWebSocketMessage]);
 
@@ -329,12 +328,12 @@ const VoiceAgentRealtime = () => {
       mediaRecorderRef.current = { stream, audioContext, processor, source };
       setIsRecording(true);
       isRecordingRef.current = true;
-      setError(null);
-      addLog('🎤 Recording Started');
+      // setError(null);
+      // addLog('🎤 Recording Started');
 
     } catch (err) {
       console.error('Failed to start recording:', err);
-      setError('Microphone access denied. Please allow microphone access.');
+      toast.error('Microphone access denied. Please allow microphone access.');
     }
   };
 
@@ -370,22 +369,9 @@ const VoiceAgentRealtime = () => {
     setIsRecording(false);
     isRecordingRef.current = false;
     setVolume(0);
-    addLog('⏹️ Recording Stopped');
+    // addLog('⏹️ Recording Stopped');
   }, []);
 
-  /**
-   * Toggle mute/unmute
-   */
-  const toggleMute = () => {
-    if (audioContextRef.current) {
-      if (isMuted) {
-        audioContextRef.current.resume();
-      } else {
-        audioContextRef.current.suspend();
-      }
-      setIsMuted(!isMuted);
-    }
-  };
 
   /**
    * Connect on mount, disconnect on unmount
@@ -562,7 +548,7 @@ const VoiceAgentRealtime = () => {
               className="flex-1 p-4 overflow-y-auto"
             >
               <FileUpload
-                applicationId={applicationId}
+                applicationId={eligibilityResult?.application_id || null}
                 previousUploads={uploadedFiles}
                 onUploadSuccess={(data, file) => {
                   toast.success("Verification Complete!");
