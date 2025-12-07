@@ -11,6 +11,7 @@ import {
   Award,
 } from "lucide-react";
 import { reportAPI } from "../utils/api";
+import { useNavigate } from "react-router-dom";
 
 const LoanResultCard = ({
   result,
@@ -18,6 +19,7 @@ const LoanResultCard = ({
   extractedData,
   applicationId,
 }) => {
+  const navigate = useNavigate();
   const [loadingExplain, setLoadingExplain] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -296,32 +298,7 @@ const LoanResultCard = ({
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               disabled={!applicationId || loadingExplain}
-              onClick={async () => {
-                if (!applicationId) return;
-                setLoadingExplain(true);
-                try {
-                  const { data } = await reportAPI.generateAnalysis(
-                    applicationId
-                  );
-                  const analysisText =
-                    data?.analysis ?? JSON.stringify(data ?? {});
-                  setAnalysis(analysisText);
-                  setAnalysisError("");
-                } catch (e) {
-                  let msg =
-                    "Sorry, I'm having trouble responding right now. Please try again.";
-                  try {
-                    msg =
-                      e?.response?.data?.detail ||
-                      e?.response?.data ||
-                      e?.message ||
-                      msg;
-                  } catch (__) {}
-                  setAnalysisError(String(msg));
-                } finally {
-                  setLoadingExplain(false);
-                }
-              }}
+              onClick={() => navigate('/admin/dashboard')}
               className="px-4 py-2 rounded-md bg-indigo-600 text-white disabled:opacity-60"
               title={
                 !applicationId

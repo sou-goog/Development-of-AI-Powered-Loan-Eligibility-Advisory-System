@@ -9,6 +9,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import MainLayout from "./layout/MainLayout";
+import Verification from "./pages/Verification";
 
 // Pages
 import Home from "./pages/Home";
@@ -67,6 +68,8 @@ export default function App() {
 
         {/* Application Page */}
         <Route path="/apply" element={<ApplyPage />} />
+        {/* Document Verification Page */}
+        <Route path="/verify" element={<Verification />} />
 
         {/* Public Login (Applicant Login) */}
         <Route path="/auth" element={<AuthPage />} />
