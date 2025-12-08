@@ -294,38 +294,12 @@ const VoiceAgentRealtime = () => {
       });
       mediaRecorderRef.current = recorder;
 
-      // 4. Data Handling (Base64 Queue)
-      const processInputQueue = async () => {
-        if (isProcessingInputRef.current || inputQueueRef.current.length === 0) return;
-        isProcessingInputRef.current = true;
-
-        const blob = inputQueueRef.current.shift();
-
-        try {
-          const buffer = await blob.arrayBuffer();
-          let binary = '';
-          const bytes = new Uint8Array(buffer);
-          const len = bytes.byteLength;
-          for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          const base64Audio = window.btoa(binary);
-
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: "audio_data", data: base64Audio }));
-          }
-        } catch (e) {
-          console.error("Processing error:", e);
-        } finally {
-          isProcessingInputRef.current = false;
-          if (inputQueueRef.current.length > 0) processInputQueue();
-        }
-      };
-
+      // 4. Data Handling (Direct Binary Send)
+      // We purposefully simplify this to reduce latency and complex processing loop
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          inputQueueRef.current.push(event.data);
-          processInputQueue();
+        if (event.data.size > 0 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          // Send raw blob immediately - Backend handles binary frames
+          wsRef.current.send(event.data);
         }
       };
 
