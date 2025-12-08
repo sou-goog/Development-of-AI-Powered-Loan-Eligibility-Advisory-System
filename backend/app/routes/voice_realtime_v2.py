@@ -252,6 +252,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
                     while True:
                         try:
                             message = await websocket.receive()
+                            # DIAGNOSTIC LOGGING
+                            if "bytes" in message:
+                                # logger.info(f"WS RX: Binary ({len(message['bytes'])} bytes)") 
+                                pass # Reduce spam, but we know it's bytes
+                            elif "text" in message:
+                                logger.info(f"WS RX: Text ({len(message['text'])} chars): {message['text'][:100]}")
                         except:
                             break # Disconnected
 
@@ -259,6 +265,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
                             chunk = message["bytes"]
                             chunk_count += 1
                             if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes)")
+                            # logger.info(f"Sending {len(chunk)} bytes to Deepgram")
                             await dg_socket.send(chunk)
                         
                         elif "text" in message:
