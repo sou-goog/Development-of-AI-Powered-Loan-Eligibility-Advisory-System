@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { auth } from "../utils/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bot,
@@ -43,6 +44,10 @@ export default function MiniChatbot({
   }, [messages, isExpanded]);
 
   const toggleExpanded = () => {
+    if (!auth.isAuthenticated()) {
+      navigate("/auth");
+      return;
+    }
     const next = !isExpanded;
     setIsExpanded(next);
     if (typeof onToggleMinimize === "function") onToggleMinimize(!next);

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { auth } from "../utils/auth";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import MiniChatbot from "../components/MiniChatbot";
@@ -18,6 +19,13 @@ import CallingAgentPanel from "../components/CallingAgentPanel";
 export default function ApplyPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  // Require authentication before showing page
+  useEffect(() => {
+    if (!auth.isAuthenticated()) {
+      navigate("/auth");
+    }
+  }, [navigate]);
+  // ...existing code...
   const formRef = useRef(null);
   const resultRef = useRef(null);
 
@@ -108,7 +116,11 @@ export default function ApplyPage() {
                 <LoanApplicationForm
                   setEligibilityResult={setEligibilityResult}
                   setApplicationData={setApplicationData}
-                  setApplicationId={setApplicationId}
+                  setApplicationId={(id) => {
+                    setApplicationId(id);
+                    // Redirect to verification page after application submit
+                    if (id) navigate(`/verify?applicationId=${id}`);
+                  }}
                 />
               </div>
             ) : (

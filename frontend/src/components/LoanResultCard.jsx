@@ -13,6 +13,7 @@ import {
 import { reportAPI } from "../utils/api";
 import { useNavigate } from "react-router-dom";
 
+
 const LoanResultCard = ({
   result,
   applicationData,
@@ -22,8 +23,38 @@ const LoanResultCard = ({
   const navigate = useNavigate();
   const [loadingExplain, setLoadingExplain] = useState(false);
   const [analysis, setAnalysis] = useState(null);
-  const [reportLoading, setReportLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
+
+  // Download PDF Report handler
+  const handleDownload = async () => {
+    if (!applicationId) return;
+    try {
+      await reportAPI.generateReport(applicationId);
+      const res = await reportAPI.downloadReport(applicationId);
+      const contentType = res.headers?.["content-type"] || "application/pdf";
+      const blob = new Blob([res.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      if (contentType.includes("html")) {
+        window.open(url, "_blank");
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""}`;
+        a.click();
+        a.remove();
+      }
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      // Optionally handle error
+    } finally {
+    }
+  };
+
+  // Go to Dashboard handler
+  const handleGoToDashboard = () => {
+    navigate('/admin/dashboard');
+  };
+
   const getStatusConfig = (status) => {
     switch (status?.toLowerCase()) {
       case "eligible":
@@ -309,52 +340,23 @@ const LoanResultCard = ({
               {loadingExplain ? "Generating analysis..." : "Explain with AI"}
             </button>
 
-            <button
-              disabled={!applicationId || reportLoading}
-              onClick={async () => {
-                if (!applicationId) return;
-                setReportLoading(true);
-                try {
-                  // Ensure report exists
-                  await reportAPI.generateReport(applicationId);
-                  // Then trigger download
-                  const res = await reportAPI.downloadReport(applicationId);
-                  const contentType =
-                    res.headers?.["content-type"] || "application/pdf";
-                  const blob = new Blob([res.data], { type: contentType });
-                  const url = window.URL.createObjectURL(blob);
-                  // If the server returned HTML (fallback), open in new tab so browser can render it.
-                  if (contentType.includes("html")) {
-                    window.open(url, "_blank");
-                  } else {
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `loan_report_${applicationId}${
-                      contentType.includes("pdf") ? ".pdf" : ""
-                    }`;
-                    a.click();
-                    a.remove();
-                  }
-                  window.URL.revokeObjectURL(url);
-                } catch (e) {
-                  // optional: toast
-                } finally {
-                  setReportLoading(false);
-                }
-              }}
-              className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
-              title={
-                !applicationId
-                  ? "Report requires an application ID"
-                  : "Download PDF report"
-              }
-            >
-              {reportLoading ? "Preparing report..." : "Download PDF Report"}
-            </button>
+            <div className="flex flex-row items-center justify-center gap-4 mt-4">
+              <button
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                onClick={handleDownload}
+              >
+                Download PDF Report
+              </button>
+              <button
+                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                onClick={handleGoToDashboard}
+              >
+                Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
-
       {/* Application Summary */}
       {(applicationData || extractedData) && (
         <motion.div
@@ -367,7 +369,7 @@ const LoanResultCard = ({
             <div className="bg-secondary-100 p-2 rounded-lg">
               <CreditCard className="w-5 h-5 text-secondary-600" />
             </div>
-            <h4 className="text-lg font-semibold text-primary-600">
+            <h4 className="text-lg font-semibold" style={{ color: '#F3F4F6' }}>
               Application Summary
             </h4>
           </div>
@@ -375,35 +377,21 @@ const LoanResultCard = ({
           <div className="grid md:grid-cols-2 gap-6">
             {applicationData && (
               <div>
-                <h5 className="font-medium text-gray-900 mb-3">
+                <h5 className="font-medium mb-3" style={{ color: '#F3F4F6' }}>
                   Personal Information
                 </h5>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Name:</span>
-                    <span className="font-medium">
-                      {applicationData.full_name}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium">{applicationData.email}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Phone:</span>
-                    <span className="font-medium">{applicationData.phone}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Monthly Income:</span>
-                    <span className="font-medium">
-                      ₹{applicationData.monthly_income}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Loan Amount:</span>
-                    <span className="font-medium">
-                      ₹{applicationData.loan_amount_requested}
-                    </span>
+                  <div className="grid grid-cols-2 gap-y-2">
+                    <span style={{ color: '#F3F4F6' }}>Name:</span>
+                    <span className="font-medium text-left">{applicationData.full_name}</span>
+                    <span style={{ color: '#F3F4F6' }}>Email:</span>
+                    <span className="font-medium text-left">{applicationData.email}</span>
+                    <span style={{ color: '#F3F4F6' }}>Phone:</span>
+                    <span className="font-medium text-left">{applicationData.phone}</span>
+                    <span style={{ color: '#F3F4F6' }}>Monthly Income:</span>
+                    <span className="font-medium text-left">₹{applicationData.monthly_income}</span>
+                    <span style={{ color: '#F3F4F6' }}>Loan Amount:</span>
+                    <span className="font-medium text-left">₹{applicationData.loan_amount_requested}</span>
                   </div>
                 </div>
               </div>

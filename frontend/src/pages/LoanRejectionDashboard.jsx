@@ -2,16 +2,18 @@
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import { loanAPI } from "../utils/api";
+import { useParams } from "react-router-dom";
 
-function LoanRejectionDashboard({ applicationId }) {
+function LoanRejectionDashboard() {
+  const { userId } = useParams();
   const [application, setApplication] = useState(null);
 
   useEffect(() => {
     // Fetch application details from API
-    loanAPI.getApplication(applicationId).then((res) => {
+    loanAPI.getLastApplication().then((res) => {
       setApplication(res.data);
     });
-  }, [applicationId]);
+  }, [userId]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -26,9 +28,11 @@ function LoanRejectionDashboard({ applicationId }) {
     loanType,
     rejectionReason,
     detailedReason,
-    metrics,
-    suggestions,
-  } = application;
+    metrics = [],
+    suggestions = [],
+    // eslint-disable-next-line no-unused-vars
+    id
+  } = application || {};
 
   return (
     <AdminLayout>
@@ -54,7 +58,9 @@ function LoanRejectionDashboard({ applicationId }) {
           <p className="text-lg font-semibold text-white">{applicantName}</p>
 
           <p className="text-sm text-slate-400 mt-3">Application ID</p>
-          <p className="text-lg font-semibold text-white">{applicationId}</p>
+          <p className="text-lg font-semibold text-white">
+            {application?.id || "N/A"}
+          </p>
         </div>
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">

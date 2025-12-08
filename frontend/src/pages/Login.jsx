@@ -17,8 +17,9 @@ function Login() {
       // Call backend login API
       const res = await authAPI.login(email, password);
 
-      // NOTE: backend returns → { access_token, token_type, user }
+      // Store token and user object for role-based routing
       localStorage.setItem("authToken", res.data.access_token);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
 
       navigate("/dashboard");
     } catch (err) {

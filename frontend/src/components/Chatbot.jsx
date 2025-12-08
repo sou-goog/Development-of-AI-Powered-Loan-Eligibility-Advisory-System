@@ -1,11 +1,19 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { auth } from "../utils/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { chatAPI } from "../utils/api";
 import { toast } from "react-toastify";
 import { Send, Bot, User } from "lucide-react";
 
 export default function Chatbot({ applicationId = null }) {
+  const navigate = useNavigate();
+  // Require authentication before showing chatbot
+  useEffect(() => {
+    if (!auth.isAuthenticated()) {
+      navigate("/auth");
+    }
+  }, [navigate]);
   const navigate = useNavigate();
   const generateId = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 

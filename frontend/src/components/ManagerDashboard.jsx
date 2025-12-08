@@ -11,18 +11,20 @@ import {
   CheckCircle,
   Phone,
   Mail,
-  Download,
+  Bell,
 } from "lucide-react";
 import MiniChatbot from "./MiniChatbot";
+import ManagerNotifications from "./ManagerNotifications";
 import { motion, AnimatePresence } from "framer-motion";
-
-/**
- * ManagerDashboard - Material-inspired redesign
- *
- * Replace the placeholder fetch/post functions with your real API calls.
- */
+import { useNavigate } from "react-router-dom";
 
 export default function ManagerDashboard() {
+  /**
+   * ManagerDashboard - Material-inspired redesign
+   *
+   * Replace the placeholder fetch/post functions with your real API calls.
+   */
+
   // ---- state ----
   const [applications, setApplications] = useState([]); // raw
   const [loading, setLoading] = useState(false);
@@ -33,16 +35,20 @@ export default function ManagerDashboard() {
   const [filter, setFilter] = useState(null); // null | 'pending' | 'approved' | 'rejected'
   const [stats, setStats] = useState(null);
 
+  // Notification state
+  const [notifModal, setNotifModal] = useState(null);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+
+  const navigate = useNavigate();
+
   // ---- lifecycle: load data ----
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
         setError(null);
-        const [apps, statData] = await Promise.all([
-          loadApplications(),
-          loadStats(),
-        ]);
+        const [apps, statData] = await Promise.all([loadApplications(), loadStats()]);
         setApplications(apps);
         setStats(statData);
       } catch (err) {
@@ -62,15 +68,9 @@ export default function ManagerDashboard() {
         if (filter && a.approval_status !== filter) return false;
         if (!term) return true;
         return (
-          String(a.full_name || "")
-            .toLowerCase()
-            .includes(term) ||
-          String(a.email || "")
-            .toLowerCase()
-            .includes(term) ||
-          String(a.id || "")
-            .toLowerCase()
-            .includes(term)
+          String(a.full_name || "").toLowerCase().includes(term) ||
+          String(a.email || "").toLowerCase().includes(term) ||
+          String(a.id || "").toLowerCase().includes(term)
         );
       })
       .sort((x, y) => {
@@ -134,37 +134,34 @@ export default function ManagerDashboard() {
     [applications]
   );
 
-  const handleDecision = useCallback(async (id, decision) => {
-    // optimistic UI update
-    setApplications((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, approval_status: decision } : a))
-    );
-
-    try {
-      await postDecision(id, decision); // replace with your API
-      // refresh stats (optionally refresh apps)
-      const latestStats = await loadStats();
-      setStats(latestStats);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to update decision. Reverting change.");
-      // revert on failure
+  const handleDecision = useCallback(
+    async (id, decision) => {
+      // optimistic UI update
       setApplications((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, approval_status: "pending" } : a
-        )
+        prev.map((a) => (a.id === id ? { ...a, approval_status: decision } : a))
       );
-    }
-  }, []);
 
-  const handleDownloadReport = useCallback(async (id) => {
-    try {
-      await downloadReport(id); // replace with your API call that returns a file or url
-    } catch (err) {
-      console.error(err);
-      setError("Failed to download report.");
-    }
-  }, []);
+      try {
+        await postDecision(id, decision); // replace with your API
+        // refresh stats (optionally refresh apps)
+        const latestStats = await loadStats();
+        setStats(latestStats);
+      } catch (err) {
+        console.error(err);
+        setError("Failed to update decision. Reverting change.");
+        // revert on failure
+        setApplications((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, approval_status: "pending" } : a))
+        );
+      }
+    },
+    []
+  );
+
+  // Handler for 'View Dashboard' button
+  const handleViewDashboard = useCallback((id) => {
+    navigate(`/admin/dashboard?id=${id}`);
+  }, [navigate]);
 
   // ---- small helpers ----
   const niceCurrency = (val) => {
@@ -177,19 +174,77 @@ export default function ManagerDashboard() {
   // ---- render ----
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 space-y-6 relative">
+      {/* Manager Notifications */}
+      {notifPanelOpen && (
+        <ManagerNotifications
+          onNotificationClick={setNotifModal}
+          onNotificationDismiss={(id) => setNotifModal(null)}
+          setNotifCount={setNotifCount}
+          setUnreadCount={setNotifCount}
+        />
+      )}
+            {/* Notification Modal */}
+            <AnimatePresence>
+              {notifModal && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                >
+                  <motion.div
+                    initial={{ scale: 0.96 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0.96 }}
+                    className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+                    style={{ minWidth: '320px' }}
+                  >
+                    <div className="px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white flex items-center justify-between sticky top-0 z-10">
+                      <div>
+                        <h3 className="text-lg font-semibold">New Loan Application</h3>
+                        <p className="text-sm opacity-90">Basic Applicant Details</p>
+                      </div>
+                      <button
+                        onClick={() => setNotifModal(null)}
+                        className="p-2 rounded-full hover:bg-white/10"
+                        aria-label="Close"
+                      >
+                        <XCircle className="w-6 h-6 text-white" />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <ContactField icon={Users} label="Name" value={notifModal.full_name} />
+                      <ContactField icon={Mail} label="Email" value={notifModal.email} />
+                      <ContactField icon={DollarSign} label="Loan Amount" value={`$${niceCurrency(notifModal.loan_amount)}`} />
+                      <ContactField icon={FileText} label="Application ID" value={notifModal.application_id} />
+                      <ContactField icon={FileText} label="Created At" value={notifModal.created_at ? new Date(notifModal.created_at).toLocaleString() : "N/A"} />
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
       {/* Header */}
       <div className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-semibold text-gray-900">
-            Manager Dashboard
-          </h1>
+          <h1 className="text-3xl font-semibold text-gray-900">Manager Dashboard</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Monitor and manage loan applications — material-inspired, cleaner
-            layout.
+            Monitor and manage loan applications — material-inspired, cleaner layout.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            className="relative p-3 rounded-lg bg-gradient-to-br from-primary-50 to-white shadow-sm focus:outline-none"
+            onClick={() => setNotifPanelOpen((open) => !open)}
+            aria-label="View Notifications"
+          >
+            <Bell className="w-6 h-6 text-primary-600" />
+            {notifCount > 0 && (
+              <span className="absolute top-2 right-2 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5">
+                {notifCount}
+              </span>
+            )}
+          </button>
           <div className="p-3 rounded-lg bg-gradient-to-br from-primary-50 to-white shadow-sm">
             <BarChart3 className="w-6 h-6 text-primary-600" />
           </div>
@@ -210,9 +265,7 @@ export default function ManagerDashboard() {
             >
               <div>
                 <p className="text-sm text-gray-500">{s.title}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {s.value}
-                </p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{s.value}</p>
               </div>
               <div className={`p-3 rounded-lg ${s.bgColor}`}>
                 <Icon className={`w-6 h-6 ${s.color}`} />
@@ -250,8 +303,7 @@ export default function ManagerDashboard() {
           ))}
 
           <div className="ml-2 text-sm text-gray-500">
-            {filteredApplications.length} result
-            {filteredApplications.length !== 1 ? "s" : ""}
+            {filteredApplications.length} result{filteredApplications.length !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
@@ -279,40 +331,24 @@ export default function ManagerDashboard() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Applicant
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Loan
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Eligibility
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Applicant</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Loan</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Eligibility</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Status</th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-8 text-center text-gray-500"
-                  >
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                     Loading applications...
                   </td>
                 </tr>
               ) : filteredApplications.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-12 text-center text-gray-500"
-                  >
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                     <FileText className="mx-auto mb-2 w-8 h-8 text-gray-400" />
                     No applications found
                   </td>
@@ -332,12 +368,8 @@ export default function ManagerDashboard() {
                           <Users className="w-5 h-5" />
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900">
-                            {app.full_name || "—"}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {app.email || "—"}
-                          </div>
+                          <div className="font-medium text-gray-900">{app.full_name || "—"}</div>
+                          <div className="text-xs text-gray-500">{app.email || "—"}</div>
                         </div>
                       </div>
                     </td>
@@ -345,9 +377,7 @@ export default function ManagerDashboard() {
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-gray-400" />
-                        <div className="font-medium">
-                          ${niceCurrency(app.loan_amount)}
-                        </div>
+                        <div className="font-medium text-red-700 bg-red-50 px-2 py-1 rounded">${niceCurrency(app.loan_amount)}</div>
                       </div>
                     </td>
 
@@ -355,27 +385,15 @@ export default function ManagerDashboard() {
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <Target className="w-4 h-4 text-gray-400" />
-                          <div className="text-sm font-medium">
-                            {app.eligibility_score == null
-                              ? "N/A"
-                              : `${Math.round(
-                                  (app.eligibility_score || 0) * 100
-                                )}%`}
+                          <div className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                            {app.eligibility_score == null ? "N/A" : `${Math.round((app.eligibility_score || 0) * 100)}%`}
                           </div>
                         </div>
                         <div className="w-24 bg-gray-100 rounded-full h-2">
                           <motion.div
                             className="h-2 rounded-full bg-gradient-to-r from-primary-600 to-secondary-600"
                             initial={{ width: 0 }}
-                            animate={{
-                              width: `${Math.max(
-                                0,
-                                Math.min(
-                                  100,
-                                  Math.round((app.eligibility_score || 0) * 100)
-                                )
-                              )}%`,
-                            }}
+                            animate={{ width: `${Math.max(0, Math.min(100, Math.round((app.eligibility_score || 0) * 100)))}%` }}
                             transition={{ duration: 0.8 }}
                           />
                         </div>
@@ -414,11 +432,11 @@ export default function ManagerDashboard() {
                         )}
 
                         <button
-                          onClick={() => handleDownloadReport(app.id)}
+                          onClick={() => handleViewDashboard(app.id)}
                           className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm hover:bg-primary-700"
                         >
-                          <Download className="w-4 h-4 inline-block mr-1" />
-                          Report
+                          <BarChart3 className="w-4 h-4 inline-block mr-1" />
+                          View Dashboard
                         </button>
                       </div>
                     </td>
@@ -443,13 +461,12 @@ export default function ManagerDashboard() {
               initial={{ scale: 0.96 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.96 }}
-              className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden"
+              className="bg-white w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{ minWidth: '320px' }}
             >
-              <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white flex items-center justify-between">
+              <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white flex items-center justify-between sticky top-0 z-10">
                 <div>
-                  <h3 className="text-lg font-semibold">
-                    {selectedApp.full_name}
-                  </h3>
+                  <h3 className="text-lg font-semibold">{selectedApp.full_name}</h3>
                   <p className="text-sm opacity-90">Application Details</p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -463,25 +480,47 @@ export default function ManagerDashboard() {
                 </div>
               </div>
 
-              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 64px)' }}>
                 {/* Left column: contact & financial */}
                 <div className="space-y-4">
-                  <ContactField
-                    icon={Mail}
-                    label="Email"
-                    value={selectedApp.email}
-                  />
-                  <ContactField
-                    icon={Phone}
-                    label="Phone"
-                    value={selectedApp.phone}
-                  />
+                  <ContactField icon={Users} label="Name" value={selectedApp.full_name} />
+                  <ContactField icon={Mail} label="Email" value={selectedApp.email} />
+                  <ContactField icon={Phone} label="Phone" value={selectedApp.phone} />
+                  <ContactField icon={DollarSign} label="Loan Amount" value={`$${niceCurrency(selectedApp.loan_amount)}`} />
+                  <ContactField icon={BarChart3} label="Annual Income" value={`$${niceCurrency(selectedApp.annual_income)}`} />
+                  <ContactField icon={Target} label="Eligibility Score" value={selectedApp.eligibility_score == null ? "N/A" : `${Math.round((selectedApp.eligibility_score || 0) * 100)}%`} />
+                  <ContactField icon={FileText} label="Credit Score" value={selectedApp.credit_score ?? "N/A"} />
+                  <ContactField icon={CheckCircle} label="Approval Status" value={selectedApp.approval_status} />
+                  <ContactField icon={FileText} label="Created At" value={selectedApp.created_at ? new Date(selectedApp.created_at).toLocaleString() : "N/A"} />
+                </div>
+
+                {/* Right column: Uploaded Documents */}
+                <div className="space-y-4 lg:col-span-2">
+                  <div className="bg-white p-4 rounded-lg border border-gray-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-5 h-5 text-primary-600" />
+                      <span className="font-semibold text-gray-800">Uploaded Documents</span>
+                    </div>
+                    {/* Placeholder for documents. Replace with actual document list if available in selectedApp */}
+                    {selectedApp.documents && selectedApp.documents.length > 0 ? (
+                      <ul className="list-disc pl-5">
+                        {selectedApp.documents.map((doc, i) => (
+                          <li key={i} className="mb-1">
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-primary-600 underline">{doc.name}</a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-sm text-gray-500">No documents uploaded.</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
 
       {/* MiniChatbot fixed in bottom-right */}
       <div className="fixed bottom-6 right-6 z-50">
@@ -504,23 +543,21 @@ function StatusBadge({ status }) {
     undefined: { className: "bg-gray-100 text-gray-700", text: "Unknown" },
   };
   const s = statusMap[status] || statusMap.null;
-  return (
-    <span
-      className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${s.className}`}
-    >
-      {s.text}
-    </span>
-  );
+  return <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${s.className}`}>{s.text}</span>;
 }
 
 function ContactField({ icon: Icon, label, value }) {
+  // Highlight Loan Amount and Eligibility Score
+  let valueColor = "text-gray-900";
+  if (label === "Loan Amount") valueColor = "text-red-700 bg-red-50 px-2 py-1 rounded font-extrabold";
+  if (label === "Eligibility Score") valueColor = "text-blue-700 bg-blue-50 px-2 py-1 rounded font-extrabold";
   return (
     <div className="bg-white p-3 rounded-lg border border-gray-100">
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
         <Icon className="w-4 h-4 text-gray-400" />
         <div>{label}</div>
       </div>
-      <div className="text-sm font-medium text-gray-900">{value ?? "N/A"}</div>
+      <div className={`text-lg font-extrabold ${valueColor}`}>{value ?? "N/A"}</div>
     </div>
   );
 }
@@ -582,15 +619,9 @@ async function postDecision(id, decision) {
   return { ok: true };
 }
 
-async function downloadReport(id) {
-  // Replace with real report-download logic.
-  // Example: fetch file as blob -> createObjectURL -> open or download
-  await sleep(200);
-  // For now just log
-  console.log("Download report for", id);
-  return true;
-}
+
 
 function sleep(ms = 100) {
   return new Promise((res) => setTimeout(res, ms));
 }
+

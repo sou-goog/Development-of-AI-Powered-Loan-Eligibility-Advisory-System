@@ -6,14 +6,14 @@ function AdminLayout({ children }) {
   const location = useLocation();
 
   const menu = [
-    { name: "Dashboard", path: "/dashboard" },
-    { name: "Loan Analytics", path: "/loan-analytics" },
-    { name: "ML Performance", path: "/ml-performance" },
-    { name: "Voice Analytics", path: "/voice-analytics" },
-    { name: "Applications", path: "/applications" },
-    { name: "Transcripts", path: "/transcripts" },
-    { name: "System Settings", path: "/settings" },
-    { name: "Project Overview", path: "/overview" },
+    { name: "Dashboard", path: "/admin/dashboard" },
+    { name: "Loan Analytics", path: "/admin/loan-analytics" },
+    { name: "ML Performance", path: "/admin/ml-performance" },
+    { name: "Voice Analytics", path: "/admin/voice-analytics" },
+    { name: "Applications", path: "/admin/applications" },
+    { name: "Transcripts", path: "/admin/transcripts" },
+    { name: "System Settings", path: "/admin/settings" },
+    { name: "Project Overview", path: "/admin/overview" },
   ];
 
   return (

@@ -110,9 +110,30 @@ async def create_loan_application(
         db.add(db_application)
         db.commit()
         db.refresh(db_application)
-        
+
         logger.info(f"Loan application created: {db_application.id}")
-        
+
+        # Send notification to managers via WebSocket
+        try:
+            from app.routes.notification_routes import send_manager_notification
+            import asyncio
+            notification = {
+                "type": "new_application",
+                "application_id": db_application.id,
+                "full_name": db_application.full_name,
+                "email": db_application.email,
+                "loan_amount": db_application.loan_amount_requested,
+                "created_at": db_application.created_at.isoformat()
+            }
+            # If inside an async context, use await; else, use asyncio.create_task
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(send_manager_notification(notification))
+            else:
+                loop.run_until_complete(send_manager_notification(notification))
+        except Exception as notify_err:
+            logger.error(f"Manager notification error: {notify_err}")
+
         return db_application
     
     except Exception as e:
@@ -257,14 +278,46 @@ async def update_application(
             )
         
         # Update fields dynamically
+        prev_status = getattr(app, "approval_status", None)
         for key, value in update_data.items():
             if hasattr(app, key):
                 setattr(app, key, value)
         
         db.commit()
         
-        logger.info(f"Application {application_id} updated with form data")
+        new_status = getattr(app, "approval_status", None)
+        try:
+            from app.routes.user_notification_routes import send_user_notification
+            import asyncio
+            if prev_status != "accepted" and new_status == "accepted":
+                notification = {
+                    "type": "application_accepted",
+                    "application_id": application_id,
+                    "message": "Your loan application has been accepted!"
+                }
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(send_user_notification(app.user_id, notification))
+                else:
+                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+            elif prev_status != "rejected" and new_status == "rejected":
+                rejection_reason = getattr(app, "manager_notes", "No reason provided")
+                notification = {
+                    "type": "application_rejected",
+                    "application_id": application_id,
+                    "message": "Your loan application has been rejected.",
+                    "reason": rejection_reason,
+                    "action": "view_rejection_details"
+                }
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(send_user_notification(app.user_id, notification))
+                else:
+                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+        except Exception as notify_err:
+            logger.error(f"User notification error: {notify_err}")
         
+        logger.info(f"Application {application_id} updated with form data")
         return {"message": "Application updated successfully", "application_id": application_id}
     
     except HTTPException:
@@ -490,4 +543,33 @@ async def get_model_info():
         "output_range": "0.0 - 1.0",
         "interpretation": "Higher score = higher eligibility",
         "preprocessing": "Label encoding for categorical features, Standard scaling for numerical features"
+    }
+
+
+@router.post("/share-dashboard/{user_id}")
+async def share_dashboard(user_id: int):
+    """
+    Generate a shareable link for the user's dashboard
+    """
+    import uuid
+    # In-memory store for shared dashboard links (replace with DB for production)
+    if not hasattr(share_dashboard, "shared_dashboard_links"):
+        share_dashboard.shared_dashboard_links = {}
+    token = str(uuid.uuid4())
+    share_dashboard.shared_dashboard_links[token] = user_id
+    link = f"http://localhost:3000/public-dashboard/{token}"
+    return {"link": link, "token": token}
+
+
+@router.get("/public-dashboard/{token}")
+async def get_public_dashboard(token: str):
+    user_id = getattr(share_dashboard, "shared_dashboard_links", {}).get(token)
+    if not user_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Invalid or expired dashboard link")
+    # Fetch dashboard data for user_id (replace with real logic)
+    # Example: return latest application, stats, ML metrics, etc.
+    return {
+        "user_id": user_id,
+        "dashboard": f"Dashboard data for user {user_id} (replace with real data)"
     }

@@ -1,4 +1,5 @@
-import React from "react";
+import PublicDashboard from "./pages/PublicDashboard";
+import React, { lazy } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -15,6 +16,7 @@ import Verification from "./pages/Verification";
 import Home from "./pages/Home";
 import AuthPage from "./pages/AuthPage";
 import ApplyPage from "./pages/ApplyPage";
+import EligibilityResultPage from "./pages/EligibilityResultPage";
 
 // Dashboard pages
 import Login from "./pages/Login";
@@ -32,7 +34,13 @@ import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
 import VoiceAgentRealtime from "./components/VoiceAgentRealtime_v2";
 
 // Utils
+
 import { auth } from "./utils/auth";
+
+// Lazy import for ManagerDashboard (must be after all import statements)
+const ManagerDashboard = lazy(() => import('./pages/Manager'));
+
+// ...existing code...
 
 // Protected Route Wrapper
 function ProtectedRoute({ children, requireManager = false }) {
@@ -51,7 +59,16 @@ export default function App() {
       <MainLayout>
         <Routes>
           <Route path="/" element={<Home />} />
-
+          <Route
+            path="/manager"
+            element={
+              <ProtectedRoute requireManager={true}>
+                  <React.Suspense fallback={<div>Loading...</div>}>
+                    <ManagerDashboard />
+                  </React.Suspense>
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/auth"
             element={
@@ -65,35 +82,32 @@ export default function App() {
               )
             }
           />
-
-        {/* Application Page */}
-        <Route path="/apply" element={<ApplyPage />} />
-        {/* Document Verification Page */}
-        <Route path="/verify" element={<Verification />} />
-
-        {/* Public Login (Applicant Login) */}
-        <Route path="/auth" element={<AuthPage />} />
-
-        {/* Admin Login */}
-        <Route path="/login" element={<Login />} />
-
-        {/* DASHBOARD ROUTES */}
-        <Route path="/admin/dashboard" element={<MainDashboard />} />
-        <Route path="/admin/loan-analytics" element={<LoanAnalytics />} />
-        <Route path="/admin/ml-performance" element={<MLPerformance />} />
-        <Route path="/admin/voice-analytics" element={<VoiceAnalytics />} />
-        <Route path="/admin/applications" element={<ApplicationsTable />} />
-        <Route path="/admin/transcripts" element={<Transcripts />} />
-        <Route path="/admin/settings" element={<SystemSettings />} />
-        <Route path="/admin/overview" element={<ProjectOverview />} />
-        <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
-
-        {/* Voice agent */}
-        <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
-
-        {/* 404 → redirect home */}
-        <Route path="*" element={<Navigate to="/" />} />
-
+          {/* Application Page */}
+          <Route path="/apply" element={<ApplyPage />} />
+          {/* Document Verification Page */}
+          <Route path="/verify" element={<Verification />} />
+          {/* Eligibility Result Page */}
+          <Route path="/eligibility-result" element={<EligibilityResultPage />} />
+          {/* Public Login (Applicant Login) */}
+          <Route path="/auth" element={<AuthPage />} />
+          {/* Admin Login */}
+          <Route path="/login" element={<Login />} />
+          {/* DASHBOARD ROUTES */}
+          <Route path="/admin/dashboard" element={<MainDashboard />} />
+          <Route path="/admin/loan-analytics" element={<LoanAnalytics />} />
+          <Route path="/admin/ml-performance" element={<MLPerformance />} />
+          <Route path="/admin/voice-analytics" element={<VoiceAnalytics />} />
+          <Route path="/admin/applications" element={<ApplicationsTable />} />
+          <Route path="/admin/transcripts" element={<Transcripts />} />
+          <Route path="/admin/settings" element={<SystemSettings />} />
+          <Route path="/admin/overview" element={<ProjectOverview />} />
+          <Route path="/admin/loan-rejection/:userId" element={<LoanRejectionDashboard />} />
+          {/* Voice agent */}
+          <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
+          {/* Public Dashboard View (read-only) */}
+          <Route path="/public-dashboard/:token" element={<PublicDashboard />} />
+          {/* 404 → redirect home */}
+          <Route path="*" element={<Navigate to="/" />} />
           {/* Loan Rejection Details */}
           <Route
             path="/loan-rejection/:userId"
@@ -103,10 +117,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-
-         
         </Routes>
-
         <ToastContainer position="top-right" autoClose={4000} />
       </MainLayout>
     </Router>
