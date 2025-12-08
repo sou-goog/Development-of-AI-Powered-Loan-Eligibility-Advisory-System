@@ -23,6 +23,7 @@ Date: December 2025
 import asyncio
 import json
 import logging
+import re
 import os
 import uuid
 import base64
@@ -36,6 +37,7 @@ from dotenv import load_dotenv
 from groq import AsyncGroq
 # We keep DeepgramClient for REST/TTS, but use direct websockets for Streaming STT
 from deepgram import DeepgramClient
+from app.services.ml_model_service import MLModelService 
 
 # Try to import optional services
 try:
@@ -71,6 +73,10 @@ if not GROQ_API_KEY or not DEEPGRAM_API_KEY:
 groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 # Used for TTS (REST)
 deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+ml_service = MLModelService() # Initialize ML Service
+
+async def get_groq_client():
+    return groq_client
 
 # System prompt
 LOAN_AGENT_PROMPT = """You are LoanVoice, a friendly and efficient voice assistant for loan eligibility assessment.
@@ -86,6 +92,7 @@ Your job:
 4. Be casual, friendly, and efficient.
 5. When you extract information, acknowledge it
 6. Once all fields are collected (Name, Income, Credit Score, Amount), you MUST IMMEDIATELY say "Checking to see if you are eligible..." to proceed. DO NOT ask the user "Should I check now?". Just do it.
+7. If the user input is unclear, ambiguous, or invalid (e.g., "in" instead of a number), you MUST politely ask for clarification in your text response BEFORE the JSON block.
 
 CRITICAL INSTRUCTION:
 At the very end of your response, you MUST append the extracted data in JSON format, separated by '|||JSON|||'.
@@ -145,7 +152,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=300"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -252,9 +259,16 @@ async def voice_stream_endpoint(websocket: WebSocket):
                     chunk_count = 0
                     while True:
                         try:
-                            logger.info("Waiting for WebSocket message...")
-                            message = await websocket.receive()
-                            logger.info(f"Received message type: {message.keys()}")
+                            # KeepAlive Logic: Wait for message with timeout
+                            try:
+                                # logger.info("Waiting for WebSocket message...")
+                                message = await asyncio.wait_for(websocket.receive(), timeout=5.0)
+                            except asyncio.TimeoutError:
+                                # Send KeepAlive to Deepgram to prevent net0001
+                                await dg_socket.send(json.dumps({"type": "KeepAlive"}))
+                                continue
+
+                            # logger.info(f"Received message type: {message.keys()}")
                             
                             # DIAGNOSTIC LOGGING (Safe)
                             if "bytes" in message:
@@ -292,8 +306,16 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                                 
                                         if data_json.get("type") == "text_input":
                                             text = data_json.get("data")
+                                            
+                                            # Send KeepAlive to Deepgram (Prevent Net0001 Timeout)
+                                            await dg_socket.send(json.dumps({"type": "KeepAlive"}))
+                                            
                                             await websocket.send_json({"type": "final_transcript", "data": text})
-                                            await process_llm_response(text, websocket, conversation_history, structured_data)
+                                            
+                                            # NON-BLOCKING: Process LLM in background so we don't freeze inputs
+                                            asyncio.create_task(
+                                                process_llm_response(text, websocket, conversation_history, structured_data, generate_audio=False)
+                                            )
             
                                         elif data_json.get("type") == "document_uploaded":
                                             await handle_document_logic()
@@ -369,7 +391,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
              await websocket.close()
         except: pass
 
-async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict):
+async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict, generate_audio: bool = True):
     """Process user text with Groq LLM and stream response."""
     history.append({"role": "user", "content": user_text})
     current_state_str = json.dumps(data, indent=2)
@@ -392,30 +414,69 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         is_collecting_json = False
         json_buffer = ""
         
+        # Buffer for sentence-level TTS
+        sentence_buffer = ""
+        
         async for chunk in completion:
             content = chunk.choices[0].delta.content
             if not content: continue
-                
-            if "|||JSON|||" in content:
-                parts = content.split("|||JSON|||")
-                await websocket.send_json({"type": "ai_token", "data": parts[0]})
-                full_response += parts[0]
-                is_collecting_json = True
-                if len(parts) > 1: json_buffer += parts[1]
-                continue
             
+            # 1. State: Collecting JSON
             if is_collecting_json:
                 json_buffer += content
-            else:
-                await websocket.send_json({"type": "ai_token", "data": content})
-                full_response += content
+                continue
+
+            # 2. State: Streaming Text
+            await websocket.send_json({"type": "ai_token", "data": content})
+            full_response += content
+            sentence_buffer += content
+            
+            # Check for JSON delimiter in the ACCUMULATED buffer
+            if "|||JSON|||" in sentence_buffer:
+                parts = sentence_buffer.split("|||JSON|||")
+                speech_part = parts[0]
+                json_part = parts[1] if len(parts) > 1 else ""
+                
+                # Speak the final speech part
+                if speech_part.strip() and generate_audio:
+                     cleaned_speech = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', speech_part)
+                     audio = await synthesize_speech_deepgram(cleaned_speech)
+                     if audio:
+                        b64 = base64.b64encode(audio).decode('ascii')
+                        await websocket.send_json({"type": "audio_chunk", "data": b64})
+                
+                # Switch to JSON mode
+                is_collecting_json = True
+                json_buffer += json_part
+                sentence_buffer = "" # Clear buffer forever
+                continue
+
+            # Check for sentence delimiters (Sentence-Level Streaming)
+            if any(punct in sentence_buffer for punct in ['. ', '? ', '! ', '.\n', '?\n', '!\n']):
+                for delimiter in ['. ', '? ', '! ', '.\n', '?\n', '!\n']:
+                     if delimiter in sentence_buffer:
+                         parts = sentence_buffer.split(delimiter)
+                         # Everything except the last part is a complete sentence(s)
+                         complete_sentence = delimiter.join(parts[:-1]) + delimiter.strip()
+                         remainder = parts[-1]
+                         
+                         if complete_sentence.strip() and generate_audio:
+                             # Clean and Speak IMMEDIATELLY
+                             speech_chunk = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', complete_sentence)
+                             logger.info(f"TTS Streaming: {speech_chunk[:30]}...")
+                             
+                             audio = await synthesize_speech_deepgram(speech_chunk)
+                             if audio:
+                                 b64 = base64.b64encode(audio).decode('ascii')
+                                 await websocket.send_json({"type": "audio_chunk", "data": b64})
+                         
+                         sentence_buffer = remainder
+                         break
+
 
         if full_response.strip():
              history.append({"role": "assistant", "content": full_response})
-             audio = await synthesize_speech_deepgram(full_response)
-             if audio:
-                 b64 = base64.b64encode(audio).decode('ascii')
-                 await websocket.send_json({"type": "audio_chunk", "data": b64})
+
         
         # Parse JSON
         if json_buffer:
@@ -423,8 +484,129 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 # Remove markdown code blocks if present
                 clean_json = json_buffer.replace("```json", "").replace("```", "").strip()
                 extracted = json.loads(clean_json)
-                data.update(extracted)
-                await websocket.send_json({"type": "structured_update", "data": extracted})
+                
+                # DIAGNOSTIC LOG
+                logger.info(f"LLM EXTRACTED RAW: {extracted}")
+                
+                 # KEY NORMALIZATION (Refactored Helper Logic)
+                normalized = {}
+                for k, v in extracted.items():
+                    k_lower = k.lower().strip().replace(" ", "_")
+                    
+                    # 1. Income
+                    if k_lower in ["income", "monthly_income", "monthlyincome", "salary", "annual_income"]:
+                         try: normalized["monthly_income"] = float(str(v).replace("$","").replace(",","")) 
+                         except: pass
+                    
+                    # 2. Credit Score
+                    elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:
+                         try: normalized["credit_score"] = int(str(v).replace(",",""))
+                         except: pass
+                         
+                    # 3. Loan Amount
+                    elif k_lower in ["loan_amount", "amount", "loanamount", "loan", "requested_amount"]:
+                         try: normalized["loan_amount"] = float(str(v).replace("$","").replace(",",""))
+                         except: pass
+                         
+                    # 4. Tenure
+                    elif k_lower in ["loan_tenure_years", "tenure", "years", "term"]:
+                         try: normalized["loan_tenure_years"] = float(v)
+                         except: pass
+                         
+                    # 5. Name (Pass through)
+                    elif k_lower == "name":
+                        normalized["name"] = v
+
+                logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
+                data.update(normalized)
+                
+                # DIAGNOSTIC: Log global data state
+                logger.info(f"FINAL DATA STATE: {data}")
+                
+                await websocket.send_json({"type": "structured_update", "data": normalized})
+
+                # PROACTIVE ELIGIBILITY CHECK
+                # Simplify: Check strictly against 'data' which is the source of truth
+                has_income = data.get("monthly_income") is not None
+                has_score = data.get("credit_score") is not None
+                has_amount = data.get("loan_amount") is not None
+                
+                if has_income and has_score and has_amount and not data.get("eligibility_checked"):
+                    
+                    try:
+                        # Prepare data for ML
+                        income = float(data.get("monthly_income", 0))
+                        score = int(data.get("credit_score", 0))
+                        amount = float(data.get("loan_amount", 0))
+
+                        # GUARD: Prevent premature check if values are effectively zero
+                        if income < 100 or amount < 100 or score < 300:
+                             logger.warning(f"Premature Eligibility Check blocked: Income={income}, Score={score}, Amount={amount}")
+                             return
+
+                        logger.error(f"!!! DEBUG PROACTIVE CHECK !!! Income={income}, Score={score}, Amount={amount}")
+
+                        applicant = {
+                            "Monthly_Income": income,
+                            "Credit_Score": score,
+                            "Loan_Amount_Requested": amount,
+                            # Defaults
+                            "Loan_Tenure_Years": 5, 
+                            "Existing_EMI": 0,
+                        }
+                        
+                        logger.info(f"APPLICANT FOR ML: {applicant}")
+                        
+                        result = ml_service.predict_eligibility(applicant)
+                        data["eligibility_checked"] = True # Prevent loops
+                        
+                        # 1. Send to Frontend (Visual Card)
+                        await websocket.send_json({"type": "eligibility_result", "data": result})
+                        
+                        # 2. Force Verbal Announcement (Chain Response)
+                        # We inject a system message telling the AI the result is ready
+                        announcement_prompt = (
+                            f"SYSTEM_EVENT: Eligibility Calculated. "
+                            f"Result: {result['eligibility_status'].upper()} (Score: {result['eligibility_score']}). "
+                            f"Risk: {result['risk_level']}. "
+                            f"Inform the user immediately and enthusiastically."
+                        )
+                        
+                        # Trigger new completion for the announcement
+                        # We use the existing history + specific instruction
+                        announce_messages = messages + [{"role": "system", "content": announcement_prompt}]
+                        
+                        completion = await groq_client.chat.completions.create(
+                            model=GROQ_MODEL,
+                            messages=announce_messages,
+                            stream=True,
+                            temperature=0.7,
+                            max_tokens=500
+                        )
+                        
+                        full_announcement = ""
+                        async for chunk in completion:
+                            content = chunk.choices[0].delta.content
+                            if not content: continue
+                            
+                            await websocket.send_json({"type": "ai_token", "data": content})
+                            full_announcement += content
+                        
+                        if full_announcement.strip() and generate_audio:
+                            # Clean and Speak
+                            speech_text = full_announcement.split("|||JSON|||")[0]
+                            speech_text = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', speech_text)
+                            audio = await synthesize_speech_deepgram(speech_text)
+                            if audio:
+                                b64 = base64.b64encode(audio).decode('ascii')
+                                await websocket.send_json({"type": "audio_chunk", "data": b64})
+                                 
+                            history.append({"role": "system", "content": f"Calculated: {result['eligibility_status']}"})
+                            history.append({"role": "assistant", "content": full_announcement})
+
+                    except Exception as e:
+                        logger.error(f"Auto-Eligibility Failed: {e}")
+
             except:
                 logger.error(f"Failed to parse JSON: {json_buffer}")
 

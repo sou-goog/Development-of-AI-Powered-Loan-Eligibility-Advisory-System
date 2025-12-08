@@ -253,6 +253,12 @@ class MLModelService:
                 if self.x_columns is not None:
                     # Use aligned DataFrame directly
                     X = features_df[self.x_columns]
+                    
+                    # DIAGNOSTIC: Log the feature vector
+                    row_dict = X.iloc[0].to_dict()
+                    logger.info(f"ML PREDICTION INPUT: Income={row_dict.get('Monthly_Income')}, Score={row_dict.get('Credit_Score')}, Amount={row_dict.get('Loan_Amount_Requested')}, DTI={row_dict.get('Debt_to_Income_Ratio')}")
+                    # logger.info(f"Full Vector: {row_dict}")
+
                     eligibility_score = float(self.model.predict_proba(X)[0][1])
                 else:
                     # Legacy path: scale numerics and concat encoded categoricals

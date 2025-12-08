@@ -138,10 +138,10 @@ const VoiceAgentRealtime = () => {
    * Auto-scroll to bottom of conversation
    */
   useEffect(() => {
-    if (finalTranscripts.length > 0 || partialTranscript || currentAiToken) {
+    if (finalTranscripts.length > 0 || currentAiToken) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [finalTranscripts, currentAiToken, partialTranscript]);
+  }, [finalTranscripts, currentAiToken]);
 
   /**
    * Handle incoming WebSocket messages
