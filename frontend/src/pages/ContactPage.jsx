@@ -19,7 +19,12 @@ export default function ContactPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || !formData.subject || !formData.message) {
+    if (
+      !formData.name ||
+      !formData.email ||
+      !formData.subject ||
+      !formData.message
+    ) {
       toast.error("Please fill in all fields");
       return;
     }
@@ -53,13 +58,13 @@ export default function ContactPage() {
       icon: Clock,
       title: "Business Hours",
       value: "Mon-Fri: 9 AM - 6 PM",
-      description: "EST Timezone",
+      description: "India Standard Time (IST)",
     },
     {
       icon: MapPin,
       title: "Address",
       value: "123 Financial Street",
-      description: "New York, NY 10001",
+      description: "New Delhi, DL 110001, India",
     },
   ];
 
@@ -76,7 +81,8 @@ export default function ContactPage() {
             Get in Touch
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
-            We'd love to hear from you. Send us a message and we'll respond as soon as possible.
+            We'd love to hear from you. Send us a message and we'll respond as
+            soon as possible.
           </p>
         </motion.div>
 
@@ -212,7 +218,8 @@ export default function ContactPage() {
                     AI Assistant Support
                   </h3>
                   <p className="text-sm text-gray-700 dark:text-gray-300">
-                    Chat with our AI assistant for instant help with common questions about loans, applications, and eligibility.
+                    Chat with our AI assistant for instant help with common
+                    questions about loans, applications, and eligibility.
                   </p>
                 </div>
               </div>
