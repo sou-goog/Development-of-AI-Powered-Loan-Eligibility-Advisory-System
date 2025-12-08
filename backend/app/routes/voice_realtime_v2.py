@@ -35,14 +35,7 @@ from dotenv import load_dotenv
 # Cloud APIs
 from groq import AsyncGroq
 from deepgram import DeepgramClient, AsyncDeepgramClient
-
-# For newer deepgram versions, LiveTranscriptionEvents may not be directly available
-try:
-    from deepgram import LiveTranscriptionEvents
-except ImportError:
-    # Define a placeholder if not available in newer versions
-    class LiveTranscriptionEvents:
-        pass
+from deepgram.core.events import EventType
 
 # Try to import optional services
 try:
@@ -158,31 +151,36 @@ async def voice_stream_endpoint(websocket: WebSocket):
     # Deepgram Live Connection
     try:
         # Define Event Handlers
-        # Define Event Handlers
-        def on_message(self, result, **kwargs):
+        def on_message(message):
             try:
-                sentence = result.channel.alternatives[0].transcript
-                logger.info(f"Deepgram transcript (final={result.is_final}): {sentence}")
-                
-                if len(sentence) == 0:
-                    return 
-                
-                if result.is_final:
-                    logger.info(f"User said: {sentence}")
-                    
-                    async def process_async():
-                        try:
-                            await websocket.send_json({"type": "final_transcript", "data": sentence})
-                            await process_llm_response(sentence, websocket, conversation_history, structured_data)
-                        except Exception as e:
-                            logger.error(f"Error processing async response: {e}")
+                # In SDK 5.3.0, message is a dict-like object with transcription data
+                # Structure: message['channel']['alternatives'][0]['transcript']
+                if hasattr(message, 'channel') and message.channel:
+                    alternatives = message.channel.alternatives
+                    if alternatives and len(alternatives) > 0:
+                        sentence = alternatives[0].transcript
+                        is_final = message.is_final if hasattr(message, 'is_final') else False
+                        logger.info(f"Deepgram transcript (final={is_final}): {sentence}")
+                        
+                        if len(sentence) == 0:
+                            return 
+                        
+                        if is_final:
+                            logger.info(f"User said: {sentence}")
                             
-                    asyncio.create_task(process_async())
+                            async def process_async():
+                                try:
+                                    await websocket.send_json({"type": "final_transcript", "data": sentence})
+                                    await process_llm_response(sentence, websocket, conversation_history, structured_data)
+                                except Exception as e:
+                                    logger.error(f"Error processing async response: {e}")
+                                    
+                            asyncio.create_task(process_async())
             except Exception as e:
-                logger.error(f"Error in on_message: {e}")
+                logger.error(f"Error in on_message: {e}", exc_info=True)
 
-        def on_error(self, error, **kwargs):
-            logger.error(f"Deepgram Error: {error}")
+        def on_error(error):
+            logger.error(f"Deepgram Error: {error}", exc_info=True)
 
         options = {
             "model": "nova-2", 
@@ -198,22 +196,21 @@ async def voice_stream_endpoint(websocket: WebSocket):
         }
 
         # Initialize Deepgram Live Client (Async)
-        # Note: In SDK 5.3.0, use listen.v1.connect() with AsyncClient - verified in verify_deepgram.py
+        # Note: In SDK 5.3.0, use listen.v1.connect() with AsyncClient
+        # Events are: EventType.OPEN, EventType.MESSAGE, EventType.ERROR, EventType.CLOSE
         
         logger.info("Connecting to Deepgram STT...")
-        async with deepgram_client_async.listen.v1.connect(**options) as dg_connection:
-            
-            # Event Handlers
-            dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-            dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-            dg_connection.on(LiveTranscriptionEvents.Close, lambda self, close, **kwargs: logger.info(f"Deepgram Connection Closed: {close}"))
-            dg_connection.on(LiveTranscriptionEvents.Metadata, lambda self, metadata, **kwargs: logger.info(f"Deepgram Metadata: {metadata}"))
-            dg_connection.on(LiveTranscriptionEvents.SpeechStarted, lambda self, speech_started, **kwargs: logger.info(f"Deepgram SpeechStarted"))
-            dg_connection.on(LiveTranscriptionEvents.UtteranceEnd, lambda self, utterance_end, **kwargs: logger.info(f"Deepgram UtteranceEnd"))
+        try:
+            async with deepgram_client_async.listen.v1.connect(**options) as dg_connection:
+                
+                # Event Handlers using EventType enum
+                dg_connection.on(EventType.MESSAGE, on_message)
+                dg_connection.on(EventType.ERROR, on_error)
+                dg_connection.on(EventType.CLOSE, lambda close: logger.info(f"Deepgram Connection Closed: {close}"))
+                dg_connection.on(EventType.OPEN, lambda: logger.info("Deepgram Connection Opened"))
 
-            logger.info("Deepgram STT Connected.")
-            
-            try:
+                logger.info("Deepgram STT Connected successfully.")
+                
                 chunk_count = 0
                 logger.info("Entering WebSocket Receive Loop...")
                 while True:
@@ -349,20 +346,24 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                 b64 = base64.b64encode(audio).decode('ascii')
                                 await websocket.send_json({"type": "audio_chunk", "data": b64})
             
-            except WebSocketDisconnect:
-                logger.info(f"Voice session ended: {session_id}")
-            except Exception as e:
-                logger.error(f"Error in voice session: {e}", exc_info=True)
-            finally:
-                # Context manager handles disconnect automatically? 
-                # Or we might want to log.
-                pass
+        except WebSocketDisconnect:
+            logger.info(f"Voice session ended: {session_id}")
+        except Exception as e:
+            logger.error(f"Error in voice session: {e}", exc_info=True)
+        finally:
+            # Context manager handles disconnect automatically
+            pass
 
     except Exception as e:
-        logger.error(f"Connection setup failed: {e}", exc_info=True)
+        logger.error(f"Deepgram connection setup failed: {e}", exc_info=True)
         try:
-             await websocket.close()
-        except: pass
+            await websocket.send_json({"type": "error", "data": f"Connection error: {str(e)}"})
+        except:
+            pass
+        try:
+            await websocket.close()
+        except:
+            pass
 
 async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict):
     """Process user text with Groq LLM and stream response."""
