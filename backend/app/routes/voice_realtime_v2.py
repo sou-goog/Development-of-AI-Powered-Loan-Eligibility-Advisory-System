@@ -261,37 +261,50 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         except:
                             break # Disconnected
 
-                        if "bytes" in message:
-                            chunk = message["bytes"]
-                            chunk_count += 1
-                            if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes)")
-                            # logger.info(f"Sending {len(chunk)} bytes to Deepgram")
-                            await dg_socket.send(chunk)
-                        
-                        elif "text" in message:
-                            try:
-                                data_json = json.loads(message["text"])
-                                if data_json.get("type") == "debug_log":
-                                    logger.info(f"FRONTEND DEBUG: {data_json.get('message')}")
-
-                                if data_json.get("type") == "audio_data":
-                                    b64 = data_json.get("data")
-                                    if b64:
-                                        chunk = base64.b64decode(b64)
-                                        chunk_count += 1
-                                        if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) [Base64]")
-                                        await dg_socket.send(chunk)
+                        # Robust Error Handling Wrapper
+                        try:
+                            if "bytes" in message:
+                                chunk = message["bytes"]
+                                chunk_count += 1
+                                # VERBOSE LOGGING ENABLED
+                                # if chunk_count % 50 == 0: 
+                                logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) -> Sending to Deepgram")
+                                
+                                try:
+                                    await dg_socket.send(chunk)
+                                except Exception as e:
+                                    logger.error(f"Failed to send chunk #{chunk_count} to Deepgram: {e}")
+                                    break
+                            
+                            elif "text" in message:
+                                try:
+                                    data_json = json.loads(message["text"])
+                                    if data_json.get("type") == "debug_log":
+                                        logger.info(f"FRONTEND DEBUG: {data_json.get('message')}")
+        
+                                    if data_json.get("type") == "audio_data":
+                                        b64 = data_json.get("data")
+                                        if b64:
+                                            chunk = base64.b64decode(b64)
+                                            chunk_count += 1
+                                            if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) [Base64]")
+                                            await dg_socket.send(chunk)
+                                            
+                                    if data_json.get("type") == "text_input":
+                                        text = data_json.get("data")
+                                        await websocket.send_json({"type": "final_transcript", "data": text})
+                                        await process_llm_response(text, websocket, conversation_history, structured_data)
+        
+                                    elif data_json.get("type") == "document_uploaded":
+                                        await handle_document_logic()
                                         
-                                if data_json.get("type") == "text_input":
-                                    text = data_json.get("data")
-                                    await websocket.send_json({"type": "final_transcript", "data": text})
-                                    await process_llm_response(text, websocket, conversation_history, structured_data)
+                                except Exception as e:
+                                    logger.error(f"Error handling text message: {e}")
 
-                                elif data_json.get("type") == "document_uploaded":
-                                    await handle_document_logic()
-                                    
-                            except Exception as e:
-                                logger.error(f"Error handling text message: {e}")
+                        except Exception as e:
+                            logger.error(f"CRITICAL ERROR handling WebSocket message: {e}")
+                            # Continue loop to keep audio alive
+                            continue
                 except Exception as e:
                     logger.error(f"Sender Task Error: {e}")
             

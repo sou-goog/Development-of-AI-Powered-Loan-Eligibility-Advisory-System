@@ -297,14 +297,21 @@ const VoiceAgentRealtime = () => {
       // 4. Data Handling (Direct Binary Send)
       // We purposefully simplify this to reduce latency and complex processing loop
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          // Send raw blob immediately - Backend handles binary frames
-          wsRef.current.send(event.data);
+        // Trace log: confirm event firing and size
+        if (event.data.size > 0) {
+          console.log(`🎤 Audio Chunk: ${event.data.size} bytes`);
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(event.data);
+            // console.log("Sent chunk to WS");
+          } else {
+            console.warn("⚠️ WS not ready, dropping chunk");
+          }
         }
       };
 
       // 5. Start Recording
       recorder.start(250); // 250ms chunks
+      console.log("✅ MediaRecorder start(250) called");
 
       setIsRecording(true);
       isRecordingRef.current = true;
