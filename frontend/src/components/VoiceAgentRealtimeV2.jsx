@@ -114,6 +114,11 @@ const VoiceAgentRealtime = () => {
       const { type, data } = message;
 
       switch (type) {
+        case "status":
+          // Backend is ready for audio
+          console.log("Backend status:", data);
+          break;
+
         case "partial_transcript":
           setPartialTranscript(data);
           break;
@@ -253,7 +258,7 @@ const VoiceAgentRealtime = () => {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
       processor.onaudioprocess = (e) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           // Get float32 audio data
           const inputData = e.inputBuffer.getChannelData(0);
 
@@ -266,7 +271,19 @@ const VoiceAgentRealtime = () => {
           }
 
           // Send raw PCM16LE audio to backend
-          wsRef.current.send(int16Data.buffer);
+          try {
+            wsRef.current.send(int16Data.buffer);
+          } catch (err) {
+            console.error("Failed to send audio to backend:", err);
+          }
+        } else {
+          if (!wsRef.current) {
+            console.warn("WebSocket not initialized");
+          } else if (wsRef.current.readyState !== WebSocket.OPEN) {
+            console.warn(
+              `WebSocket not open (state: ${wsRef.current.readyState})`
+            );
+          }
         }
       };
 

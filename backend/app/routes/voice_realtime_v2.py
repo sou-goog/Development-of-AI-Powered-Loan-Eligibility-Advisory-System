@@ -211,6 +211,13 @@ async def voice_stream_endpoint(websocket: WebSocket):
 
                 logger.info("Deepgram STT Connected successfully.")
                 
+                # Send ready signal to frontend so it can start sending audio
+                try:
+                    await websocket.send_json({"type": "status", "data": "ready_to_receive_audio"})
+                    logger.info("Sent ready signal to frontend")
+                except Exception as e:
+                    logger.error(f"Failed to send ready signal: {e}")
+                
                 chunk_count = 0
                 logger.info("Entering WebSocket Receive Loop...")
                 while True:
@@ -230,11 +237,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         if chunk_count % 10 == 0: # Log more frequently
                              logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes)")
                         
-                        # chunk type check
-                        # logger.info(f"Chunk type: {type(chunk)}")
-                        
                         # Send to Deepgram using Async Client method
-                        await dg_connection.send_media(chunk)
+                        try:
+                            await dg_connection.send_media(chunk)
+                        except Exception as e:
+                            logger.error(f"Failed to send audio to Deepgram: {e}")
+                            break
                     
                     elif "text" in message:
                         # Handle text input or control messages
