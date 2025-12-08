@@ -312,6 +312,21 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                             
                                             await websocket.send_json({"type": "final_transcript", "data": text})
                                             
+                                            # DIAGNOSTIC: Test ML service directly
+                                            if "TEST123" in text.upper():
+                                                logger.error("!!! DIAGNOSTIC TEST TRIGGERED !!!")
+                                                test_applicant = {
+                                                    "Monthly_Income": 5000.0,
+                                                    "Credit_Score": 750,
+                                                    "Loan_Amount_Requested": 10000.0,
+                                                    "Loan_Tenure_Years": 5,
+                                                    "Existing_EMI": 0,
+                                                }
+                                                test_result = ml_service.predict_eligibility(test_applicant)
+                                                logger.error(f"!!! TEST RESULT: {test_result} !!!")
+                                                await websocket.send_json({"type": "eligibility_result", "data": test_result})
+                                                continue
+                                            
                                             # NON-BLOCKING: Process LLM in background so we don't freeze inputs
                                             asyncio.create_task(
                                                 process_llm_response(text, websocket, conversation_history, structured_data, generate_audio=False)

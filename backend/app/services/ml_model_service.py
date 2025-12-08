@@ -483,6 +483,7 @@ class MLModelService:
         Dummy prediction logic when model is not loaded
         Used for testing purposes with the 23-feature format
         """
+        logger.error(f"!!! DUMMY PRED START - Input: {applicant_data} !!!")
         score = 0.0
         
         # Credit score (normalized 300-850)
@@ -513,7 +514,9 @@ class MLModelService:
         account_age = applicant_data.get('Account_Age_Months', 12)
         score += min(account_age / 60, 0.1)  # Max 0.1 for accounts older than 5 years
         
-        return min(max(score, 0.0), 1.0)
+        final_score = min(max(score, 0.0), 1.0)
+        logger.error(f"!!! DUMMY PRED END - Score: {final_score} !!!")
+        return final_score
     
     def _assess_risk_level(self, applicant_data: Dict, eligibility_score: float) -> str:
         """Assess risk level based on applicant data"""

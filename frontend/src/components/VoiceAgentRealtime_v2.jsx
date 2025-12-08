@@ -455,11 +455,12 @@ const VoiceAgentRealtime = () => {
           <div className="mt-4 mb-4 w-full">
             <LoanResultCard
               result={{
-                eligibility_status: eligibilityResult.eligible ? "eligible" : "ineligible",
-                eligibility_score: eligibilityResult.score || 0,
-                risk_level: eligibilityResult.score > 0.7 ? "low_risk" : "medium_risk",
-                credit_tier: "Good",
-                confidence: 0.9
+                eligibility_status: eligibilityResult.eligibility_status || "ineligible",
+                eligibility_score: eligibilityResult.eligibility_score || 0,
+                risk_level: eligibilityResult.risk_level || "medium_risk",
+                credit_tier: eligibilityResult.credit_tier || "Good",
+                confidence: eligibilityResult.confidence || 0.9,
+                debt_to_income_ratio: eligibilityResult.debt_to_income_ratio || 0
               }}
               applicationId={eligibilityResult.application_id}
               extractedData={extractedData}
