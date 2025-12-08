@@ -247,27 +247,26 @@ async def voice_stream_endpoint(websocket: WebSocket):
 
             # Start Sender Task (Frontend Audio -> Deepgram)
             async def sender_task():
+                logger.info("SENDER TASK STARTED")
                 try:
                     chunk_count = 0
                     while True:
                         try:
+                            logger.info("Waiting for WebSocket message...")
                             message = await websocket.receive()
-                            # DIAGNOSTIC LOGGING
+                            logger.info(f"Received message type: {message.keys()}")
+                            
+                            # DIAGNOSTIC LOGGING (Safe)
                             if "bytes" in message:
-                                # logger.info(f"WS RX: Binary ({len(message['bytes'])} bytes)") 
-                                pass # Reduce spam, but we know it's bytes
+                                pass 
                             elif "text" in message:
                                 logger.info(f"WS RX: Text ({len(message['text'])} chars): {message['text'][:100]}")
-                        except:
-                            break # Disconnected
 
-                        # Robust Error Handling Wrapper
-                        try:
+                            # PROCESSING
                             if "bytes" in message:
                                 chunk = message["bytes"]
                                 chunk_count += 1
                                 # VERBOSE LOGGING ENABLED
-                                # if chunk_count % 50 == 0: 
                                 logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) -> Sending to Deepgram")
                                 
                                 try:
@@ -279,58 +278,78 @@ async def voice_stream_endpoint(websocket: WebSocket):
                             elif "text" in message:
                                 try:
                                     data_json = json.loads(message["text"])
-                                    if data_json.get("type") == "debug_log":
-                                        logger.info(f"FRONTEND DEBUG: {data_json.get('message')}")
-        
-                                    if data_json.get("type") == "audio_data":
-                                        b64 = data_json.get("data")
-                                        if b64:
-                                            chunk = base64.b64decode(b64)
-                                            chunk_count += 1
-                                            if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) [Base64]")
-                                            await dg_socket.send(chunk)
-                                            
-                                    if data_json.get("type") == "text_input":
-                                        text = data_json.get("data")
-                                        await websocket.send_json({"type": "final_transcript", "data": text})
-                                        await process_llm_response(text, websocket, conversation_history, structured_data)
-        
-                                    elif data_json.get("type") == "document_uploaded":
-                                        await handle_document_logic()
-                                        
+                                    if isinstance(data_json, dict):
+                                        if data_json.get("type") == "debug_log":
+                                            logger.info(f"FRONTEND DEBUG: {data_json.get('message')}")
+            
+                                        if data_json.get("type") == "audio_data":
+                                            b64 = data_json.get("data")
+                                            if b64:
+                                                chunk = base64.b64decode(b64)
+                                                chunk_count += 1
+                                                if chunk_count % 50 == 0: logger.info(f"Audio chunk #{chunk_count} ({len(chunk)} bytes) [Base64]")
+                                                await dg_socket.send(chunk)
+                                                
+                                        if data_json.get("type") == "text_input":
+                                            text = data_json.get("data")
+                                            await websocket.send_json({"type": "final_transcript", "data": text})
+                                            await process_llm_response(text, websocket, conversation_history, structured_data)
+            
+                                        elif data_json.get("type") == "document_uploaded":
+                                            await handle_document_logic()
+                                    else:
+                                        logger.warning(f"Ignored non-dict JSON: {data_json}")
+
                                 except Exception as e:
                                     logger.error(f"Error handling text message: {e}")
 
+                        except RuntimeError:
+                            logger.info("WebSocket disconnected")
+                            break
                         except Exception as e:
-                            logger.error(f"CRITICAL ERROR handling WebSocket message: {e}")
+                            logger.error(f"CRITICAL ERROR in Sender Loop: {e}")
                             # Continue loop to keep audio alive
                             continue
                 except Exception as e:
-                    logger.error(f"Sender Task Error: {e}")
+                    logger.error(f"Sender Task Fatal Error: {e}")
             
             # Start Receiver Task (Deepgram Transcript -> Frontend/LLM)
             async def receiver_task():
+                logger.info("RECEIVER TASK STARTED")
                 try:
                     async for msg in dg_socket:
-                        res = json.loads(msg)
-                        # Parse Transcript
-                        # Expecting format: {"channel": {"alternatives": [{"transcript": "..."}]}}
-                        if 'channel' in res:
-                            alts = res['channel']['alternatives']
-                            if alts:
-                                sentence = alts[0]['transcript']
-                                is_final = res.get('is_final', False)
-                                
-                                if len(sentence) > 0:
-                                     # logger.info(f"Deepgram transcript: {sentence}")
-                                     pass
-                                
-                                if is_final and len(sentence) > 0:
-                                    logger.info(f"User said: {sentence}")
-                                    await websocket.send_json({"type": "final_transcript", "data": sentence})
-                                    await process_llm_response(sentence, websocket, conversation_history, structured_data)
+                        try:
+                            # Verify msg is a valid type
+                            if not isinstance(msg, (str, bytes)):
+                                logger.warning(f"Ignored non-text/bytes from Deepgram: {type(msg)}")
+                                continue
+
+                            res = json.loads(msg)
+                            if not isinstance(res, dict):
+                                logger.warning(f"Ignored non-dict response from Deepgram: {res}")
+                                continue
+
+                            # Parse Transcript
+                            if 'channel' in res:
+                                alts = res['channel']['alternatives']
+                                if alts:
+                                    sentence = alts[0]['transcript']
+                                    is_final = res.get('is_final', False)
+                                    
+                                    if len(sentence) > 0:
+                                         # logger.info(f"Deepgram transcript: {sentence}")
+                                         pass
+                                    
+                                    if is_final and len(sentence) > 0:
+                                        logger.info(f"User said: {sentence}")
+                                        await websocket.send_json({"type": "final_transcript", "data": sentence})
+                                        await process_llm_response(sentence, websocket, conversation_history, structured_data)
+                        except Exception as e:
+                             logger.error(f"Error processing Deepgram message: {e}")
+                             continue
+
                 except Exception as e:
-                    logger.error(f"Receiver Task Error: {e}")
+                    logger.error(f"Receiver Task Fatal Error: {e}")
 
             # Run both tasks concurrently
             sender = asyncio.create_task(sender_task())
