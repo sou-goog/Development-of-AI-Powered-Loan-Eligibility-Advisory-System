@@ -11,7 +11,6 @@ import {
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-
 import MainLayout from "./layout/MainLayout";
 import UserDashboard from "./pages/UserDashboard";
 
@@ -23,6 +22,8 @@ import Verification from "./pages/Verification";
 import Manager from "./pages/Manager";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
 import MiniChatbot from "./components/MiniChatbot";
+import HelpPage from "./pages/HelpPage";
+import ContactPage from "./pages/ContactPage";
 
 // ⭐ NEW PAGE IMPORT
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
@@ -84,7 +85,6 @@ export default function App() {
             }
           />
 
-
           <Route
             path="/verify"
             element={
@@ -122,12 +122,8 @@ export default function App() {
             }
           />
 
-
           {/* Public Dashboard route for sharing */}
-          <Route
-            path="/dashboard"
-            element={<UserDashboard />}
-          />
+          <Route path="/dashboard" element={<UserDashboard />} />
 
           {/* User Dashboard route (protected, for logged-in users) */}
           <Route
@@ -138,6 +134,10 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Help and Contact Pages */}
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/contact" element={<ContactPage />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
