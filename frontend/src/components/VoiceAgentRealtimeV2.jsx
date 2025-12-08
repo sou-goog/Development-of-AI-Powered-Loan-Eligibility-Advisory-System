@@ -179,17 +179,18 @@ const VoiceAgentRealtime = () => {
    * Initialize WebSocket connection to backend
    */
   const connectWebSocket = useCallback(() => {
+    // Use relative URL to respect proxy configuration
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiBaseUrl =
-      process.env.REACT_APP_API_URL || "http://localhost:8000/api";
-    const wsUrl =
-      apiBaseUrl.replace(/^https?/, protocol.slice(0, -1)) + "/voice/stream";
+    const host = window.location.host; // Includes hostname and port if non-standard
+    const wsUrl = `${protocol}//${host}/api/voice/stream`;
+
+    console.log(`Attempting to connect to WebSocket: ${wsUrl}`);
 
     try {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log("WebSocket connected");
+        console.log("WebSocket connected successfully");
         setIsConnected(true);
         setError(null);
       };
@@ -211,11 +212,15 @@ const VoiceAgentRealtime = () => {
       ws.onclose = () => {
         console.log("WebSocket closed");
         setIsConnected(false);
-        setTimeout(() => {
-          if (wsRef.current === ws) {
-            connectWebSocket();
-          }
-        }, 3000); // Auto-reconnect after 3 seconds
+        // Only auto-reconnect if we didn't explicitly close it
+        if (wsRef.current === ws && !wsRef.current.manualClose) {
+          console.log("Auto-reconnecting in 5 seconds...");
+          setTimeout(() => {
+            if (wsRef.current === ws) {
+              connectWebSocket();
+            }
+          }, 5000); // Auto-reconnect after 5 seconds
+        }
       };
 
       wsRef.current = ws;
@@ -334,6 +339,7 @@ const VoiceAgentRealtime = () => {
 
     return () => {
       if (wsRef.current) {
+        wsRef.current.manualClose = true; // Mark as manual close to prevent reconnect
         wsRef.current.close();
       }
       stopRecording();
