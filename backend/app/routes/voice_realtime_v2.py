@@ -200,35 +200,44 @@ async def voice_stream_endpoint(websocket: WebSocket):
         # Events are: EventType.OPEN, EventType.MESSAGE, EventType.ERROR, EventType.CLOSE
         
         logger.info("Connecting to Deepgram STT...")
+        dg_connection = None
         try:
-            async with deepgram_client_async.listen.v1.connect(**options) as dg_connection:
-                
-                # Event Handlers using EventType enum
-                dg_connection.on(EventType.MESSAGE, on_message)
-                dg_connection.on(EventType.ERROR, on_error)
-                dg_connection.on(EventType.CLOSE, lambda close: logger.info(f"Deepgram Connection Closed: {close}"))
-                dg_connection.on(EventType.OPEN, lambda: logger.info("Deepgram Connection Opened"))
+            # Create connection with longer timeouts
+            connection = deepgram_client_async.listen.v1.connect(**options)
+            dg_connection = await connection.__aenter__()
+            
+            # Event Handlers using EventType enum
+            dg_connection.on(EventType.MESSAGE, on_message)
+            dg_connection.on(EventType.ERROR, on_error)
+            dg_connection.on(EventType.CLOSE, lambda close: logger.info(f"Deepgram Connection Closed: {close}"))
+            dg_connection.on(EventType.OPEN, lambda: logger.info("Deepgram Connection Opened"))
 
-                logger.info("Deepgram STT Connected successfully.")
-                
-                # Send ready signal to frontend so it can start sending audio
+            logger.info("Deepgram STT Connected successfully.")
+            
+            # Send ready signal to frontend so it can start sending audio
+            try:
+                await websocket.send_json({"type": "status", "data": "ready_to_receive_audio"})
+                logger.info("Sent ready signal to frontend")
+            except Exception as e:
+                logger.error(f"Failed to send ready signal: {e}")
+            
+            chunk_count = 0
+            logger.info("Entering WebSocket Receive Loop...")
+            last_audio_time = asyncio.get_event_loop().time()
+            
+            while True:
+                # Receive message (bytes or text)
                 try:
-                    await websocket.send_json({"type": "status", "data": "ready_to_receive_audio"})
-                    logger.info("Sent ready signal to frontend")
-                except Exception as e:
-                    logger.error(f"Failed to send ready signal: {e}")
-                
-                chunk_count = 0
-                logger.info("Entering WebSocket Receive Loop...")
-                while True:
-                    # Receive message (bytes or text)
-                    try:
-                        # logger.info("Waiting for websocket message...")
-                        message = await websocket.receive()
-                        # logger.info(f"Received message keys: {list(message.keys())}")
-                    except RuntimeError:
-                        logger.info("WebSocket disconnected during receive.")
-                        break
+                    # Use a timeout so we can check connection health
+                    message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                    last_audio_time = asyncio.get_event_loop().time()
+                except asyncio.TimeoutError:
+                    # No audio for 30 seconds, close connection
+                    logger.info("No audio received for 30 seconds, closing connection")
+                    break
+                except RuntimeError:
+                    logger.info("WebSocket disconnected during receive.")
+                    break
                     
                     if "bytes" in message:
                         # Audio chunk
@@ -359,8 +368,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.error(f"Error in voice session: {e}", exc_info=True)
         finally:
-            # Context manager handles disconnect automatically
-            pass
+            # Close Deepgram connection if it's still open
+            if dg_connection:
+                try:
+                    await connection.__aexit__(None, None, None)
+                except:
+                    pass
 
     except Exception as e:
         logger.error(f"Deepgram connection setup failed: {e}", exc_info=True)

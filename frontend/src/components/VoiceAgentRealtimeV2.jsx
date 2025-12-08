@@ -254,8 +254,9 @@ const VoiceAgentRealtime = () => {
         window.webkitAudioContext)({ sampleRate: 16000 });
       const source = audioContext.createMediaStreamSource(stream);
 
-      // Create ScriptProcessor for real-time audio processing
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      // Create ScriptProcessor with smaller buffer for more frequent updates
+      // 2048 samples at 16kHz = ~128ms callbacks (better than 256ms for 4096)
+      const processor = audioContext.createScriptProcessor(2048, 1, 1);
 
       processor.onaudioprocess = (e) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
