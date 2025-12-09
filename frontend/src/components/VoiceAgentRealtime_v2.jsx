@@ -62,6 +62,7 @@ const VoiceAgentRealtime = () => {
   const messagesEndRef = useRef(null);
   const modalScrollRef = useRef(null);
 
+
   /**
    * Play next audio chunk from queue
    */
@@ -441,11 +442,10 @@ const VoiceAgentRealtime = () => {
           <p className="text-xs text-gray-500">AI Loan Assistant</p>
         </div>
         <div
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            isConnected
+          className={`px-3 py-1 rounded-full text-xs font-medium ${isConnected
               ? "bg-green-100 text-green-700"
               : "bg-red-100 text-red-700"
-          }`}
+            }`}
         >
           {isConnected ? "Connected" : "Disconnected"}
         </div>
@@ -466,16 +466,14 @@ const VoiceAgentRealtime = () => {
         {finalTranscripts.map((msg, idx) => (
           <div
             key={idx}
-            className={`flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"
+              }`}
           >
             <div
-              className={`max-w-[80%] px-4 py-2 rounded-2xl shadow-sm ${
-                msg.role === "user"
+              className={`max-w-[80%] px-4 py-2 rounded-2xl shadow-sm ${msg.role === "user"
                   ? "bg-blue-600 text-white rounded-br-none"
                   : "bg-white text-gray-800 rounded-bl-none border border-gray-100"
-              }`}
+                }`}
             >
               <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
             </div>
@@ -529,11 +527,10 @@ const VoiceAgentRealtime = () => {
             <input
               type="text"
               placeholder={isRecording ? "Listening..." : "Type a message..."}
-              className={`w-full pl-4 pr-10 py-3 rounded-full border-none focus:ring-2 transition-all shadow-sm text-base text-gray-900 ${
-                isRecording
+              className={`w-full pl-4 pr-10 py-3 rounded-full border-none focus:ring-2 transition-all shadow-sm text-base text-gray-900 ${isRecording
                   ? "bg-red-50 ring-2 ring-red-100 placeholder-red-400"
                   : "bg-gray-100 focus:bg-white focus:ring-blue-500"
-              }`}
+                }`}
               value={isRecording ? partialTranscript : undefined}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && e.target.value.trim()) {
@@ -574,19 +571,18 @@ const VoiceAgentRealtime = () => {
             style={{
               boxShadow: isRecording
                 ? `0 0 ${10 + volume}px ${Math.max(
-                    2,
-                    volume / 4
-                  )}px rgba(239, 68, 68, 0.6)`
+                  2,
+                  volume / 4
+                )}px rgba(239, 68, 68, 0.6)`
                 : undefined,
               transform: isRecording ? `scale(${1 + volume / 200})` : undefined,
             }}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-75 shadow-md flex-shrink-0 relative z-10 ${
-              isRecording
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-75 shadow-md flex-shrink-0 relative z-10 ${isRecording
                 ? "bg-red-500 text-white"
                 : isConnected
-                ? "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30"
-                : "bg-gray-300 text-gray-500 cursor-not-allowed"
-            }`}
+                  ? "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
             disabled={!isConnected}
           >
             {isRecording ? <PhoneOff size={20} /> : <Phone size={20} />}
