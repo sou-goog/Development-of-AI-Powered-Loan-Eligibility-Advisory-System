@@ -207,46 +207,43 @@ class MLModelService:
                 features_df = self._prepare_features_v2(applicant_data)
             else:
                 features_df = self._prepare_features(applicant_data)
+            
+            # Make prediction (use dummy if model not loaded)
+            if self.model:
+                if self.x_columns is not None:
+                    # Use aligned DataFrame directly
+                    X = features_df[self.x_columns]
+                    
+                    # DIAGNOSTIC: Log the feature vector
+                    row_dict = X.iloc[0].to_dict()
+                    logger.info(f"ML PREDICTION INPUT: Income={row_dict.get('Monthly_Income')}, Score={row_dict.get('Credit_Score')}, Amount={row_dict.get('Loan_Amount_Requested')}, DTI={row_dict.get('Debt_to_Income_Ratio')}")
+                    # logger.info(f"Full Vector: {row_dict}")
 
-            # Make predictions for all models
-            model_results = {}
-            for key, model in self.models.items():
-                try:
-                    if self.x_columns:
-                        X = features_df[self.x_columns]
-                        score = float(model.predict_proba(X)[0][1])
+                    eligibility_score = float(self.model.predict_proba(X)[0][1])
+                else:
+                    # Legacy path: scale numerics and concat encoded categoricals
+                    numerical_data = features_df[self.numerical_features]
+                    if hasattr(self.scaler, 'transform'):
+                        scaled_numerical = self.scaler.transform(numerical_data)
                     else:
-                        numerical_data = features_df[self.numerical_features]
-                        if hasattr(self.scaler, 'transform'):
-                            scaled_numerical = self.scaler.transform(numerical_data)
-                        else:
-                            scaled_numerical = numerical_data.values
-                        features_processed = np.column_stack([
-                            scaled_numerical,
-                            features_df[self.categorical_features].values
-                        ])
-                        score = float(model.predict_proba(features_processed)[0][1])
-                    status = "eligible" if score >= 0.5 else "ineligible"
-                    acc = self.model_accuracies.get(key, {}).get("test", None)
-                    model_results[key] = {
-                        "eligibility_score": round(score, 3),
-                        "eligibility_status": status,
-                        "accuracy": round(acc, 3) if acc is not None else None
-                    }
-                except Exception as e:
-                    logger.warning(f"Prediction failed for model {key}: {e}")
-                    model_results[key] = {
-                        "eligibility_score": 0.0,
-                        "eligibility_status": "error",
-                        "accuracy": None,
-                        "error": str(e)
-                    }
-
-            # Use XGBoost for risk, recommendations, etc.
-            xgb_score = model_results.get("xgboost", {}).get("eligibility_score", 0)
-            eligibility_status = model_results.get("xgboost", {}).get("eligibility_status", "ineligible")
-            risk_level = self._assess_risk_level(applicant_data, xgb_score)
-            recommendations = self._generate_recommendations(applicant_data, xgb_score)
+                        scaled_numerical = numerical_data.values
+                    features_processed = np.column_stack([
+                        scaled_numerical,
+                        features_df[self.categorical_features].values
+                    ])
+                    eligibility_score = float(self.model.predict_proba(features_processed)[0][1])
+            else:
+                # Dummy prediction logic for testing when no model is available
+                eligibility_score = self._dummy_predict(applicant_data)
+                logger.warning("Using dummy prediction - no trained model available")
+            
+            # Determine eligibility status and risk level
+            eligibility_status = "eligible" if eligibility_score >= 0.5 else "ineligible"
+            risk_level = self._assess_risk_level(applicant_data, eligibility_score)
+            
+            # Generate recommendations
+            recommendations = self._generate_recommendations(applicant_data, eligibility_score)
+            
             result = {
                 "models": model_results,
                 "risk_level": risk_level,
@@ -446,6 +443,7 @@ class MLModelService:
         Dummy prediction logic when model is not loaded
         Used for testing purposes with the 23-feature format
         """
+        logger.error(f"!!! DUMMY PRED START - Input: {applicant_data} !!!")
         score = 0.0
         
         # Credit score (normalized 300-850)
@@ -476,7 +474,9 @@ class MLModelService:
         account_age = applicant_data.get('Account_Age_Months', 12)
         score += min(account_age / 60, 0.1)  # Max 0.1 for accounts older than 5 years
         
-        return min(max(score, 0.0), 1.0)
+        final_score = min(max(score, 0.0), 1.0)
+        logger.error(f"!!! DUMMY PRED END - Score: {final_score} !!!")
+        return final_score
     
     def _assess_risk_level(self, applicant_data: Dict, eligibility_score: float) -> str:
         """Assess risk level based on applicant data"""
