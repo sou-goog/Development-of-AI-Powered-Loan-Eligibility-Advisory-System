@@ -425,7 +425,8 @@ async def predict_eligibility(request: LoanPredictionRequest):
         logger.info(f"Loan prediction generated: {prediction['eligibility_status']}")
 
         return {
-            "models": prediction["models"],
+            "eligibility_score": prediction["eligibility_score"],
+            "eligibility_status": prediction["eligibility_status"],
             "risk_level": prediction["risk_level"],
             "recommendations": prediction["recommendations"],
             "credit_tier": prediction["credit_tier"],
