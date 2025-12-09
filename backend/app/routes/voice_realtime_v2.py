@@ -152,7 +152,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&utterance_end_ms=700&vad_events=true&endpointing=300"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
