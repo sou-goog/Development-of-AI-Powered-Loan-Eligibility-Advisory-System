@@ -514,7 +514,7 @@ export default function ManagerDashboard() {
                       <td className="px-6 py-4 text-sm">
                         <div className="flex items-center gap-2">
                           <DollarSign className="w-4 h-4 text-gray-400" />
-                          <div className="font-medium">
+                          <div className="font-bold text-gray-900">
                             {niceCurrency(
                               app.loan_amount || app.loan_amount_requested
                             )}
@@ -526,7 +526,7 @@ export default function ManagerDashboard() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <Target className="w-4 h-4 text-gray-400" />
-                            <div className="text-sm font-medium">
+                            <div className="text-sm font-bold text-gray-900">
                               {app.eligibility_score == null
                                 ? "N/A"
                                 : `${Math.round(
@@ -775,12 +775,12 @@ function StatusBadge({ status }) {
 }
 
 function ContactField({ icon: Icon, label, value }) {
-  // Highlight Loan Amount and Eligibility Score
+  // Highlight Loan Amount and Eligibility Score with darker colors
   let valueColor = "text-gray-900";
   if (label === "Loan Amount")
-    valueColor = "text-red-700 bg-red-50 px-2 py-1 rounded font-extrabold";
+    valueColor = "text-red-900 bg-red-50 px-2 py-1 rounded font-extrabold";
   if (label === "Eligibility Score")
-    valueColor = "text-blue-700 bg-blue-50 px-2 py-1 rounded font-extrabold";
+    valueColor = "text-blue-900 bg-blue-50 px-2 py-1 rounded font-extrabold";
   return (
     <div className="bg-white p-3 rounded-lg border border-gray-100">
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
