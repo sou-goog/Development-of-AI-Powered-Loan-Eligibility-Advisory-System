@@ -235,6 +235,8 @@ class MLModelService:
 
                     pred_proba = self.models['xgboost'].predict_proba(X)
                     eligibility_score = float(pred_proba[0][1])
+                    # Cap at 95% for realistic scoring (no perfect 100% scores)
+                    eligibility_score = min(eligibility_score, 0.95)
                     logger.info(f"DEBUG: Raw model output: {pred_proba}, Eligibility score: {eligibility_score}")
                     xgb_score = eligibility_score
                     model_results = {'xgboost': eligibility_score}
@@ -250,6 +252,8 @@ class MLModelService:
                         features_df[self.categorical_features].values
                     ])
                     eligibility_score = float(self.models['xgboost'].predict_proba(features_processed)[0][1])
+                    # Cap at 95% for realistic scoring
+                    eligibility_score = min(eligibility_score, 0.95)
                     xgb_score = eligibility_score
                     model_results = {'xgboost': eligibility_score}
             else:
