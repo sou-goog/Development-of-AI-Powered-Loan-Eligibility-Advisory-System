@@ -268,6 +268,27 @@ async def verify_application_document(
 
         logger.info(f"Document verified for application {application_id}")
 
+        # Send notification to managers when document verification is completed
+        try:
+            from app.routes.notification_routes import send_manager_notification
+            import asyncio
+            notification = {
+                "type": "application_documents_verified",
+                "application_id": db_application.id,
+                "full_name": app.full_name,
+                "email": app.email,
+                "loan_amount": app.loan_amount_requested,
+                "created_at": app.created_at.isoformat() if app.created_at else datetime.utcnow().isoformat(),
+                "message": f"Documents verified for {app.full_name}"
+            }
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(send_manager_notification(notification))
+            else:
+                loop.run_until_complete(send_manager_notification(notification))
+        except Exception as notify_err:
+            logger.error(f"Manager notification error during document verification: {notify_err}")
+
         return {"message": "Document verified successfully", "application_id": application_id}
 
     except HTTPException:
