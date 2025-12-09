@@ -1,5 +1,6 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { auth } from "../utils/auth";
 import { motion } from "framer-motion";
 import { Bot, FileText, TrendingUp, ArrowRight, Shield } from "lucide-react";
 import MiniChatbot from "../components/MiniChatbot";
@@ -14,6 +15,7 @@ import MiniChatbot from "../components/MiniChatbot";
 */
 
 export default function Home() {
+  const navigate = useNavigate();
   const [showMiniChatbot, setShowMiniChatbot] = React.useState(false);
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-100">
@@ -49,17 +51,30 @@ export default function Home() {
             transition={{ duration: 0.8 }}
             className="flex flex-col sm:flex-row gap-4 pt-4"
           >
-            <Link
-              to="/apply"
+
+            <button
               className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium shadow hover:bg-indigo-700 transition flex items-center gap-2"
+              onClick={() => {
+                if (!auth.isAuthenticated()) {
+                  navigate("/auth");
+                } else {
+                  navigate("/apply");
+                }
+              }}
             >
               Get Started <ArrowRight className="w-5 h-5" />
-            </Link>
+            </button>
 
             <button
               type="button"
               className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 font-medium shadow hover:bg-slate-50 transition flex items-center gap-2"
-              onClick={() => setShowMiniChatbot(true)}
+              onClick={() => {
+                if (!auth.isAuthenticated()) {
+                  navigate("/auth");
+                } else {
+                  setShowMiniChatbot(true);
+                }
+              }}
             >
               Try AI Assistant <Bot className="w-5 h-5" />
             </button>
@@ -136,12 +151,18 @@ export default function Home() {
           Start your application and let AI assist you every step of the way.
         </motion.p>
 
-        <Link
-          to="/apply?view=form"
+        <button
           className="inline-flex items-center gap-2 px-8 py-3 bg-white text-indigo-700 rounded-xl shadow font-medium hover:bg-indigo-50 transition"
+          onClick={() => {
+            if (!auth.isAuthenticated()) {
+              navigate("/auth");
+            } else {
+              navigate("/apply?view=form");
+            }
+          }}
         >
           Begin Application <ArrowRight className="w-5 h-5" />
-        </Link>
+        </button>
       </section>
     </div>
   );

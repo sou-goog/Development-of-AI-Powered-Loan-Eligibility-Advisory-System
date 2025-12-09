@@ -40,9 +40,7 @@ if not os.getenv("VOSK_MODEL_PATH"):
         os.environ["VOSK_MODEL_PATH"] = str(default_vosk)
 
 # Import routes
-# Import voice_realtime_v2 first to ensure faster-whisper DLLs load before ML libs
-from app.routes import voice_realtime_v2
-from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes
+from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes, notification_routes
 from app.routes import voice_health
 from app.models.database import Base, engine, DB_FALLBACK_USED
 
@@ -125,6 +123,7 @@ app.include_router(loan_routes.router, prefix="/api/loan", tags=["Loan Predictio
 app.include_router(report_routes.router, prefix="/api/report", tags=["Reports"])
 app.include_router(manager_routes.router, prefix="/api/manager", tags=["Manager Dashboard"])
 app.include_router(otp_routes.router, prefix="/api/otp", tags=["OTP Verification"])
+app.include_router(notification_routes.router)
 
 # Root endpoint
 @app.get("/", tags=["Root"])

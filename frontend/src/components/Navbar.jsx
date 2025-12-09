@@ -13,6 +13,11 @@ import {
   Shield,
   User,
 } from "lucide-react";
+import UserNotifications from "./UserNotifications";
+
+
+
+
 
 /*
   Redesigned NAVBAR
@@ -70,6 +75,8 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path;
 
+
+
   return (
     <>
       {/* Top Navbar */}
@@ -95,6 +102,12 @@ export default function Navbar() {
 
         {/* Right section */}
         <div className="flex items-center gap-4">
+
+          {/* User Notifications */}
+          {isAuthenticated && !isManager && user?.id && (
+            <UserNotifications userId={user.id} />
+          )}
+
           {/* User Dropdown */}
           {isAuthenticated ? (
             <div className="relative">
@@ -117,8 +130,12 @@ export default function Navbar() {
                     <div className="mb-3 flex items-center gap-2">
                       <User className="w-8 h-8 text-indigo-700" />
                       <div>
-                        <div className="font-semibold text-gray-900">{user?.full_name || user?.name || "User"}</div>
-                        <div className="text-xs text-gray-500">{user?.email || "No email"}</div>
+                        <div className="font-semibold text-gray-900">
+                          {user?.full_name || user?.name || "User"}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {user?.email || "No email"}
+                        </div>
                       </div>
                     </div>
                     <Link

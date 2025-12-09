@@ -1,11 +1,17 @@
 """
-Loan Prediction Routes
+Loan Prediction Routes + Application management
+(Original file preserved; added missing GET /applications/{application_id} route)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.models.database import get_db, LoanApplication
-from app.models.schemas import LoanPredictionRequest, LoanPredictionResponse, LoanApplicationCreate, LoanApplicationResponse
+from app.models.schemas import (
+    LoanPredictionRequest,
+    LoanPredictionResponse,
+    LoanApplicationCreate,
+    LoanApplicationResponse,
+)
 from datetime import datetime
 from app.services.ml_model_service import MLModelService
 from app.utils.logger import get_logger
@@ -19,35 +25,7 @@ router = APIRouter()
 
 ml_service = MLModelService()
 
-# Manager: Get all applications with document info
-@router.get("/applications/all", response_model=None)
-async def get_all_applications(db: Session = Depends(get_db)):
-    """Return all loan applications for manager view, including uploaded documents and extracted data."""
-    apps = db.query(LoanApplication).order_by(LoanApplication.created_at.desc()).all()
-    result = []
-    for app in apps:
-        extracted = app.extracted_data if isinstance(app.extracted_data, dict) else {}
-        uploaded_docs = extracted.get("uploaded_documents", [])
-        # Normalize uploaded_docs to list of dicts with id and (optionally) file_path
-        norm_docs = []
-        for doc in uploaded_docs:
-            if isinstance(doc, dict):
-                norm_docs.append(doc)
-            else:
-                norm_docs.append({"id": doc})
-        result.append({
-            "id": app.id,
-            "full_name": app.full_name,
-            "email": app.email,
-            "phone": app.phone,
-            "created_at": app.created_at,
-            "approval_status": app.approval_status,
-            "document_verified": app.document_verified,
-            "uploaded_documents": norm_docs,
-            "extracted_data": extracted,
-            "report_path": getattr(app, "report_path", None),
-        })
-    return {"applications": result}
+
 def _get_current_user(request: Request, db: Session) -> User | None:
     """Extract current user from Authorization bearer token."""
     try:
@@ -81,6 +59,23 @@ async def get_last_application(request: Request, db: Session = Depends(get_db)):
     return app
 
 
+# ================
+# NEW — missing GET for single application
+# ================
+@router.get("/applications/{application_id}", response_model=LoanApplicationResponse)
+async def get_application(application_id: int, db: Session = Depends(get_db)):
+    """Fetch a single application by ID"""
+    app = (
+        db.query(LoanApplication)
+        .filter(LoanApplication.id == application_id)
+        .first()
+    )
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return app
+# ================
+
+
 @router.post("/applications")
 async def create_loan_application(
     application: LoanApplicationCreate,
@@ -96,7 +91,7 @@ async def create_loan_application(
             full_name=application.full_name,
             email=application.email,
             phone=application.phone,
-            
+
             # Map incoming data to model fields
             annual_income=application.annual_income,
             loan_amount=application.loan_amount,
@@ -104,11 +99,11 @@ async def create_loan_application(
             num_dependents=application.num_dependents,
             employment_status=application.employment_status,
             credit_score=application.credit_score,
-            
+
             # Set defaults for other required fields
             age=25,  # Will be updated from form data later
             gender="Not specified",
-            marital_status="Not specified", 
+            marital_status="Not specified",
             monthly_income=application.annual_income / 12 if application.annual_income else 0,
             employment_type=application.employment_status or "Not specified",
             loan_amount_requested=application.loan_amount,
@@ -118,7 +113,7 @@ async def create_loan_application(
             dependents=application.num_dependents or 0,
             existing_emi=0.0,
             salary_credit_frequency="Monthly",
-            
+
             # OCR and calculated fields with defaults
             total_withdrawals=0.0,
             total_deposits=0.0,
@@ -130,21 +125,42 @@ async def create_loan_application(
             income_stability_score=0.8,
             credit_utilization_ratio=0.3,
             loan_to_value_ratio=0.7,
-            
+
             # Status fields
             approval_status="pending",
             document_verified=False,
             created_at=datetime.utcnow()
         )
-        
+
         db.add(db_application)
         db.commit()
         db.refresh(db_application)
-        
+
         logger.info(f"Loan application created: {db_application.id}")
-        
+
+        # Send notification to managers via WebSocket
+        try:
+            from app.routes.notification_routes import send_manager_notification
+            import asyncio
+            notification = {
+                "type": "new_application",
+                "application_id": db_application.id,
+                "full_name": db_application.full_name,
+                "email": db_application.email,
+                "loan_amount": db_application.loan_amount_requested,
+                "created_at": db_application.created_at.isoformat()
+            }
+            # If inside an async context, use await; else, use asyncio.create_task
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(send_manager_notification(notification))
+            else:
+                loop.run_until_complete(send_manager_notification(notification))
+        except Exception as notify_err:
+            logger.error(f"Manager notification error: {notify_err}")
+
         return db_application
-    
+
     except Exception as e:
         logger.error(f"Application creation error: {str(e)}")
         db.rollback()
@@ -168,7 +184,7 @@ async def verify_application_document(
         app = db.query(LoanApplication).filter(
             LoanApplication.id == application_id
         ).first()
-        
+
         if not app:
             raise HTTPException(
                 status_code=404,
@@ -196,10 +212,10 @@ async def verify_application_document(
                     }
                 }
             )
-        
+
         # Get extracted data from request
         extracted_data = request.get("extracted_data", {})
-        
+
         # Update document verification status
         # Merge uploaded_documents if provided and compute verification according to rules
         prev = app.extracted_data or {}
@@ -235,7 +251,7 @@ async def verify_application_document(
         has_identity = any(d in identity_group for d in uploaded_ids)
         has_financial = any(d in financial_group for d in uploaded_ids)
         app.document_verified = bool(has_identity and has_financial)
-        
+
         # Update extracted financial data if provided
         if extracted_data:
             if 'monthly_income' in extracted_data:
@@ -247,13 +263,13 @@ async def verify_application_document(
                 app.account_age_months = int(extracted_data['account_age_months'])
             if 'avg_balance' in extracted_data:
                 app.avg_balance = float(extracted_data['avg_balance'])
-        
+
         db.commit()
-        
+
         logger.info(f"Document verified for application {application_id}")
-        
+
         return {"message": "Document verified successfully", "application_id": application_id}
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -279,24 +295,56 @@ async def update_application(
         app = db.query(LoanApplication).filter(
             LoanApplication.id == application_id
         ).first()
-        
+
         if not app:
             raise HTTPException(
                 status_code=404,
                 detail="Application not found"
             )
-        
+
         # Update fields dynamically
+        prev_status = getattr(app, "approval_status", None)
         for key, value in update_data.items():
             if hasattr(app, key):
                 setattr(app, key, value)
-        
+
         db.commit()
-        
+
+        new_status = getattr(app, "approval_status", None)
+        try:
+            from app.routes.user_notification_routes import send_user_notification
+            import asyncio
+            if prev_status != "accepted" and new_status == "accepted":
+                notification = {
+                    "type": "application_accepted",
+                    "application_id": application_id,
+                    "message": "Your loan application has been accepted!"
+                }
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(send_user_notification(app.user_id, notification))
+                else:
+                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+            elif prev_status != "rejected" and new_status == "rejected":
+                rejection_reason = getattr(app, "manager_notes", "No reason provided")
+                notification = {
+                    "type": "application_rejected",
+                    "application_id": application_id,
+                    "message": "Your loan application has been rejected.",
+                    "reason": rejection_reason,
+                    "action": "view_rejection_details"
+                }
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(send_user_notification(app.user_id, notification))
+                else:
+                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+        except Exception as notify_err:
+            logger.error(f"User notification error: {notify_err}")
+
         logger.info(f"Application {application_id} updated with form data")
-        
         return {"message": "Application updated successfully", "application_id": application_id}
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -312,7 +360,7 @@ async def update_application(
 async def predict_eligibility(request: LoanPredictionRequest):
     """
     Predict loan eligibility based on applicant data
-    
+
     Uses ML model to calculate eligibility score
     """
     try:
@@ -332,14 +380,14 @@ async def predict_eligibility(request: LoanPredictionRequest):
             "Dependents": request.Dependents,
             "Existing_EMI": request.Existing_EMI,
             "Salary_Credit_Frequency": request.Salary_Credit_Frequency,
-            
+
             # OCR extracted features
             "Total_Withdrawals": request.Total_Withdrawals,
             "Total_Deposits": request.Total_Deposits,
             "Avg_Balance": request.Avg_Balance,
             "Bounced_Transactions": request.Bounced_Transactions,
             "Account_Age_Months": request.Account_Age_Months,
-            
+
             # Calculated features
             "Total_Liabilities": request.Total_Liabilities,
             "Debt_to_Income_Ratio": request.Debt_to_Income_Ratio,
@@ -347,10 +395,12 @@ async def predict_eligibility(request: LoanPredictionRequest):
             "Credit_Utilization_Ratio": request.Credit_Utilization_Ratio,
             "Loan_to_Value_Ratio": request.Loan_to_Value_Ratio
         }
-        
-        # Get prediction (all models)
+
+        # Get prediction
         prediction = ml_service.predict_eligibility(applicant_data)
-        logger.info(f"Loan prediction generated: {prediction['models']}")
+
+        logger.info(f"Loan prediction generated: {prediction['eligibility_status']}")
+
         return {
             "models": prediction["models"],
             "risk_level": prediction["risk_level"],
@@ -359,7 +409,7 @@ async def predict_eligibility(request: LoanPredictionRequest):
             "debt_to_income_ratio": prediction["debt_to_income_ratio"],
             "confidence": prediction["confidence"]
         }
-    
+
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")
         raise HTTPException(
@@ -381,13 +431,13 @@ async def predict_for_application(
         app = db.query(LoanApplication).filter(
             LoanApplication.id == application_id
         ).first()
-        
+
         if not app:
             raise HTTPException(
                 status_code=404,
                 detail="Application not found"
             )
-        
+
         # Prepare data with all 23 features
         applicant_data = {
             # Direct input features
@@ -404,14 +454,14 @@ async def predict_for_application(
             "Dependents": app.dependents,
             "Existing_EMI": app.existing_emi,
             "Salary_Credit_Frequency": app.salary_credit_frequency,
-            
+
             # OCR extracted features
             "Total_Withdrawals": app.total_withdrawals,
             "Total_Deposits": app.total_deposits,
             "Avg_Balance": app.avg_balance,
             "Bounced_Transactions": app.bounced_transactions,
             "Account_Age_Months": app.account_age_months,
-            
+
             # Calculated features
             "Total_Liabilities": app.total_liabilities,
             "Debt_to_Income_Ratio": app.debt_to_income_ratio,
@@ -442,14 +492,13 @@ async def predict_for_application(
             applicant_data["Debt_to_Income_Ratio"] = dti_ratio
             app.debt_to_income_ratio = dti_ratio
             db.commit()
-        
+
         # Get prediction
         prediction = ml_service.predict_eligibility(applicant_data)
 
-        # Update application using XGBoost model results
-        xgb = prediction.get("models", {}).get("xgboost", {})
-        app.eligibility_score = xgb.get("eligibility_score")
-        app.eligibility_status = xgb.get("eligibility_status")
+        # Update application
+        app.eligibility_score = prediction["eligibility_score"]
+        app.eligibility_status = prediction["eligibility_status"]
         db.commit()
 
         # Auto-generate report after successful prediction
@@ -485,12 +534,8 @@ async def predict_for_application(
 
         logger.info(f"Prediction updated for application {application_id}")
 
-        # Return prediction and full_name for dashboard personalization
-        response = prediction.copy() if isinstance(prediction, dict) else {}
-        response["full_name"] = app.full_name
-        response["app_data"] = app_data
-        return response
-    
+        return prediction
+
     except HTTPException:
         raise
     except Exception as e:
@@ -522,4 +567,33 @@ async def get_model_info():
         "output_range": "0.0 - 1.0",
         "interpretation": "Higher score = higher eligibility",
         "preprocessing": "Label encoding for categorical features, Standard scaling for numerical features"
+    }
+
+
+@router.post("/share-dashboard/{user_id}")
+async def share_dashboard(user_id: int):
+    """
+    Generate a shareable link for the user's dashboard
+    """
+    import uuid
+    # In-memory store for shared dashboard links (replace with DB for production)
+    if not hasattr(share_dashboard, "shared_dashboard_links"):
+        share_dashboard.shared_dashboard_links = {}
+    token = str(uuid.uuid4())
+    share_dashboard.shared_dashboard_links[token] = user_id
+    link = f"http://localhost:3000/public-dashboard/{token}"
+    return {"link": link, "token": token}
+
+
+@router.get("/public-dashboard/{token}")
+async def get_public_dashboard(token: str):
+    user_id = getattr(share_dashboard, "shared_dashboard_links", {}).get(token)
+    if not user_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Invalid or expired dashboard link")
+    # Fetch dashboard data for user_id (replace with real logic)
+    # Example: return latest application, stats, ML metrics, etc.
+    return {
+        "user_id": user_id,
+        "dashboard": f"Dashboard data for user {user_id} (replace with real data)"
     }

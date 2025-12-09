@@ -1,3 +1,5 @@
+// ...existing code...
+// ...existing code...
 // API utility for frontend communication
 import axios from "axios";
 import { auth } from "./auth";
@@ -96,6 +98,9 @@ export const loanAPI = {
 
   getLastApplication: () => api.get("/loan/applications/last"),
 
+  getApplication: (applicationId) =>
+    api.get(`/loan/applications/${applicationId}`),
+
   verifyDocument: (applicationId, extractedData) =>
     api.put(`/loan/applications/${applicationId}/verify-document`, {
       extracted_data: extractedData,
@@ -105,6 +110,8 @@ export const loanAPI = {
     api.post(`/loan/predict-for-application/${applicationId}`),
 
   getModelInfo: () => api.get("/loan/model-info"),
+
+  shareDashboard: (userId) => api.post(`/loan/share-dashboard/${userId}`),
 };
 
 export const reportAPI = {
@@ -129,6 +136,8 @@ export const otpAPI = {
 };
 
 export const managerAPI = {
+    getModelMetrics: () => api.get("/manager/model-metrics"),
+    shareDashboard: (userId) => api.post(`/manager/share-dashboard/${userId}`),
   getApplications: (status = null, page = 1, limit = 10) => {
     const skip = Math.max(0, (page - 1) * limit);
     const params = { limit, skip };

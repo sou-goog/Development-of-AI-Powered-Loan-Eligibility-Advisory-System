@@ -1,6 +1,8 @@
 // src/pages/MainDashboard.jsx
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
+import { loanAPI } from "../utils/api";
+import { auth } from "../utils/auth";
 import {
   LineChart,
   Line,
@@ -15,6 +17,10 @@ import { managerAPI } from "../utils/api";
 
 function MainDashboard() {
   const [stats, setStats] = useState(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareError, setShareError] = useState("");
+  const user = auth.getUser();
 
   useEffect(() => {
     // Fetch real dashboard statistics
@@ -40,6 +46,22 @@ function MainDashboard() {
     { income: "100K", score: 0.88 },
   ];
 
+  const handleShareDashboard = async () => {
+    setShareLoading(true);
+    setShareError("");
+    try {
+      const user_id = user?.id;
+      if (!user_id) throw new Error("User ID not found");
+      const res = await loanAPI.shareDashboard(user_id);
+      setShareLink(res.data.link);
+      navigator.clipboard.writeText(res.data.link);
+    } catch (err) {
+      setShareError("Failed to generate share link");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
   // Bar Chart – Loan Amount Ranges (dynamic if API provides)
   const loanRanges = stats?.loan_amount_distribution || [
     { range: "< 2L", count: 95 },
@@ -50,7 +72,24 @@ function MainDashboard() {
 
   return (
     <AdminLayout>
-      <h1 className="text-xl font-semibold mb-6">Executive Summary</h1>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+        <h1 className="text-xl font-semibold mb-4 md:mb-0">Executive Summary</h1>
+        <div className="flex items-center">
+          <button
+            onClick={handleShareDashboard}
+            className="bg-blue-500 hover:bg-blue-600 text-white text-sm px-4 py-2 rounded-lg mr-2"
+            disabled={shareLoading}
+          >
+            {shareLoading ? "Generating..." : "Share Dashboard"}
+          </button>
+          {shareLink && (
+            <span className="ml-2 text-green-600 text-xs break-all">Link copied! <a href={shareLink} target="_blank" rel="noopener noreferrer" className="underline">{shareLink}</a></span>
+          )}
+          {shareError && (
+            <span className="ml-2 text-red-600 text-xs">{shareError}</span>
+          )}
+        </div>
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

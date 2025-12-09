@@ -1,21 +1,42 @@
 // src/pages/LoanRejectionDashboard.jsx
+
 import React, { useEffect, useState } from "react";
 import AdminLayout from "../components/AdminLayout";
 import { loanAPI } from "../utils/api";
+import { useParams } from "react-router-dom";
 
-function LoanRejectionDashboard({ applicationId }) {
+function LoanRejectionDashboard() {
+  const { userId, applicationId } = useParams();
+  const id = applicationId || userId;
   const [application, setApplication] = useState(null);
+  const [shareLink, setShareLink] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
 
   useEffect(() => {
-    // Fetch application details from API
-    loanAPI.getApplication(applicationId).then((res) => {
+    if (!id) return;
+    loanAPI.getApplication(id).then((res) => {
       setApplication(res.data);
     });
-  }, [applicationId]);
+  }, [id]);
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert("Sharable link copied!");
+
+  const handleShareDashboard = async () => {
+    setShareLoading(true);
+    setShareError("");
+    try {
+      // Use userId or application.user_id for sharing (adjust as needed)
+      const user_id = application?.user_id || userId;
+      if (!user_id) throw new Error("User ID not found");
+      const res = await loanAPI.shareDashboard(user_id);
+      setShareLink(res.data.link);
+      navigator.clipboard.writeText(res.data.link);
+      alert("Sharable dashboard link copied!");
+    } catch (err) {
+      setShareError("Failed to generate share link");
+    } finally {
+      setShareLoading(false);
+    }
   };
 
   if (!application) return <AdminLayout>Loading...</AdminLayout>;
@@ -26,8 +47,8 @@ function LoanRejectionDashboard({ applicationId }) {
     loanType,
     rejectionReason,
     detailedReason,
-    metrics,
-    suggestions,
+    metrics = [],
+    suggestions = [],
   } = application;
 
   return (
@@ -42,7 +63,7 @@ function LoanRejectionDashboard({ applicationId }) {
         <p className="text-2xl font-bold text-red-400 mt-1">
           ❌ Loan Application Rejected
         </p>
-        <p className="text-sm text-slate-300 mt-2">
+        <p className="text-sm text-red-500 mt-2">
           This loan could not be approved due to eligibility criteria.
         </p>
       </div>
@@ -103,20 +124,28 @@ function LoanRejectionDashboard({ applicationId }) {
         </ul>
       </div>
 
-      {/* Sharable Link */}
+      {/* Share Dashboard Option */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold mb-1">Sharable Link</p>
+          <p className="text-sm font-semibold mb-1">Share Dashboard</p>
           <p className="text-xs text-slate-400">
-            Share this link with the user to view their rejection dashboard.
+            Generate a public link to share this dashboard with the user.
           </p>
+          {shareLink && (
+            <div className="mt-2">
+              <span className="text-xs text-green-400">Link generated and copied!</span>
+              <br />
+              <a href={shareLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline break-all">{shareLink}</a>
+            </div>
+          )}
+          {shareError && <div className="text-xs text-red-400 mt-2">{shareError}</div>}
         </div>
-
         <button
-          onClick={handleCopyLink}
+          onClick={handleShareDashboard}
           className="bg-blue-500 hover:bg-blue-600 text-white text-sm px-4 py-2 rounded-lg"
+          disabled={shareLoading}
         >
-          Copy Link
+          {shareLoading ? "Generating..." : "Share Dashboard"}
         </button>
       </div>
     </AdminLayout>

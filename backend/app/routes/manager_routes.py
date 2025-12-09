@@ -1,3 +1,94 @@
+# import required FastAPI modules
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.models.database import get_db
+
+# Initialize router
+router = APIRouter()
+# In-memory store for shared dashboard links (replace with DB for production)
+shared_dashboard_links = {}
+@router.post("/share-dashboard/{user_id}")
+async def share_dashboard(user_id: int):
+    """
+    Generate a shareable link for the user's dashboard
+    """
+    # Generate a unique token
+    token = str(uuid.uuid4())
+    shared_dashboard_links[token] = user_id
+    # Return the public link (adjust base URL as needed)
+    link = f"http://localhost:3000/public-dashboard/{token}"
+    return {"link": link, "token": token}
+@router.get("/public-dashboard/{token}")
+async def get_public_dashboard(token: str, db: Session = Depends(get_db)):
+    """
+    Return all dashboard data for the user associated with the token
+    """
+    user_id = shared_dashboard_links.get(token)
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Invalid or expired dashboard link")
+    # Fetch all dashboard data for the user
+    # Example: get stats, applications, ML metrics, etc.
+    stats = await get_application_stats(db)
+    applications = await get_all_applications(db=db)
+    # Dummy ML metrics (replace with real logic)
+    ml_metrics = {
+        "xgboost": {"accuracy": 0.92, "precision": 0.91, "recall": 0.90, "f1": 0.905},
+        "decision_tree": {"accuracy": 0.85, "precision": 0.83, "recall": 0.82, "f1": 0.825},
+        "random_forest": {"accuracy": 0.89, "precision": 0.88, "recall": 0.87, "f1": 0.875},
+    }
+    return {
+        "user_id": user_id,
+        "stats": stats,
+        "applications": applications,
+        "ml_metrics": ml_metrics,
+    }
+from app.services.ml_model_service import MLModelService
+@router.get("/model-metrics")
+async def get_model_metrics():
+    """
+    Return metrics for XGBoost, Decision Tree, and Random Forest models
+    """
+    # Dummy metrics for demonstration; replace with real model evaluation
+    metrics = {
+        "xgboost": {
+            "accuracy": 0.92,
+            "precision": 0.91,
+            "recall": 0.90,
+            "f1": 0.905,
+            "confusionMatrix": [
+                {"label": "True Positive", "value": 120},
+                {"label": "True Negative", "value": 80},
+                {"label": "False Positive", "value": 10},
+                {"label": "False Negative", "value": 15},
+            ],
+        },
+        "decision_tree": {
+            "accuracy": 0.85,
+            "precision": 0.83,
+            "recall": 0.82,
+            "f1": 0.825,
+            "confusionMatrix": [
+                {"label": "True Positive", "value": 110},
+                {"label": "True Negative", "value": 70},
+                {"label": "False Positive", "value": 20},
+                {"label": "False Negative", "value": 25},
+            ],
+        },
+        "random_forest": {
+            "accuracy": 0.89,
+            "precision": 0.88,
+            "recall": 0.87,
+            "f1": 0.875,
+            "confusionMatrix": [
+                {"label": "True Positive", "value": 115},
+                {"label": "True Negative", "value": 75},
+                {"label": "False Positive", "value": 15},
+                {"label": "False Negative", "value": 20},
+            ],
+        },
+    }
+    return metrics
 """
 Manager Dashboard Routes
 """

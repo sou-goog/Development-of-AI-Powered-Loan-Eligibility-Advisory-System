@@ -14,6 +14,8 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { reportAPI } from "../utils/api";
+import { useNavigate } from "react-router-dom";
+
 
 const LoanResultCard = ({
   result,
@@ -21,11 +23,45 @@ const LoanResultCard = ({
   extractedData,
   applicationId,
 }) => {
+  const navigate = useNavigate();
   const [loadingExplain, setLoadingExplain] = useState(false);
   const [analysis, setAnalysis] = useState(null);
-  const [reportLoading, setReportLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
+<<<<<<< HEAD
   const [showSummary, setShowSummary] = useState(false);
+=======
+
+  // Download PDF Report handler
+  const handleDownload = async () => {
+    if (!applicationId) return;
+    try {
+      await reportAPI.generateReport(applicationId);
+      const res = await reportAPI.downloadReport(applicationId);
+      const contentType = res.headers?.["content-type"] || "application/pdf";
+      const blob = new Blob([res.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      if (contentType.includes("html")) {
+        window.open(url, "_blank");
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""}`;
+        a.click();
+        a.remove();
+      }
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      // Optionally handle error
+    } finally {
+    }
+  };
+
+  // Go to Dashboard handler
+  const handleGoToDashboard = () => {
+    navigate('/admin/dashboard');
+  };
+
+>>>>>>> origin/backup/safe-branch
   const getStatusConfig = (status) => {
     switch (status?.toLowerCase()) {
       case "eligible":
@@ -269,6 +305,7 @@ const LoanResultCard = ({
           <div className="mt-6 flex flex-wrap gap-3 justify-center">
             <button
               disabled={!applicationId || loadingExplain}
+<<<<<<< HEAD
               onClick={async () => {
                 if (!applicationId) return;
                 setLoadingExplain(true);
@@ -295,6 +332,9 @@ const LoanResultCard = ({
                   setLoadingExplain(false);
                 }
               }}
+=======
+              onClick={() => navigate('/admin/dashboard')}
+>>>>>>> origin/backup/safe-branch
               className="px-4 py-2 rounded-md bg-indigo-600 text-white disabled:opacity-60"
               title={
                 !applicationId
@@ -305,6 +345,7 @@ const LoanResultCard = ({
               {loadingExplain ? "Generating analysis..." : "Explain with AI"}
             </button>
 
+<<<<<<< HEAD
             <button
               disabled={!applicationId || reportLoading}
               onClick={async () => {
@@ -346,10 +387,25 @@ const LoanResultCard = ({
             >
               {reportLoading ? "Preparing report..." : "Download PDF Report"}
             </button>
+=======
+            <div className="flex flex-row items-center justify-center gap-4 mt-4">
+              <button
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                onClick={handleDownload}
+              >
+                Download PDF Report
+              </button>
+              <button
+                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                onClick={handleGoToDashboard}
+              >
+                Go to Dashboard
+              </button>
+            </div>
+>>>>>>> origin/backup/safe-branch
           </div>
         </div>
       </div>
-
       {/* Application Summary */}
       {(applicationData || extractedData) && (
         <motion.div
@@ -370,6 +426,7 @@ const LoanResultCard = ({
                 Application Summary
               </h4>
             </div>
+<<<<<<< HEAD
             {showSummary ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
           </button>
 
@@ -411,6 +468,35 @@ const LoanResultCard = ({
                     </div>
                   </div>
                 )}
+=======
+            <h4 className="text-lg font-semibold" style={{ color: '#F3F4F6' }}>
+              Application Summary
+            </h4>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {applicationData && (
+              <div>
+                <h5 className="font-medium mb-3" style={{ color: '#F3F4F6' }}>
+                  Personal Information
+                </h5>
+                <div className="space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-y-2">
+                    <span style={{ color: '#F3F4F6' }}>Name:</span>
+                    <span className="font-medium text-left">{applicationData.full_name}</span>
+                    <span style={{ color: '#F3F4F6' }}>Email:</span>
+                    <span className="font-medium text-left">{applicationData.email}</span>
+                    <span style={{ color: '#F3F4F6' }}>Phone:</span>
+                    <span className="font-medium text-left">{applicationData.phone}</span>
+                    <span style={{ color: '#F3F4F6' }}>Monthly Income:</span>
+                    <span className="font-medium text-left">₹{applicationData.monthly_income}</span>
+                    <span style={{ color: '#F3F4F6' }}>Loan Amount:</span>
+                    <span className="font-medium text-left">₹{applicationData.loan_amount_requested}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+>>>>>>> origin/backup/safe-branch
 
                 {extractedData && (
                   <div>

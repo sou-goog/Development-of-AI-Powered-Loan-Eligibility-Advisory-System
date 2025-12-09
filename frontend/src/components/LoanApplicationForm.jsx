@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import { loanAPI } from "../utils/api";
 import { auth } from "../utils/auth";
 import { toast } from "react-toastify";
@@ -19,7 +18,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-const LoanApplicationForm = ({ onFormComplete }) => {
+const LoanApplicationForm = ({ setEligibilityResult, setApplicationData, setApplicationId }) => {
   const [formData, setFormData] = useState({
     // Personal Information
     full_name: "",
@@ -55,7 +54,6 @@ const LoanApplicationForm = ({ onFormComplete }) => {
     bank_name: "",
   });
 
-  const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 4;
@@ -273,11 +271,17 @@ const LoanApplicationForm = ({ onFormComplete }) => {
       // Create application first
       const appResponse = await loanAPI.createApplication(applicationData);
       const applicationId = appResponse.data.id;
+      if (setApplicationId) setApplicationId(applicationId);
+      if (setApplicationData) setApplicationData(applicationData);
 
-      // Prepare data for eligibility check
-      // Navigate to document verification next
+      // Get eligibility result
+      const eligibilityResponse = await loanAPI.predictForApplication(applicationId);
+      const eligibilityResult = eligibilityResponse.data;
+      if (setEligibilityResult) setEligibilityResult(eligibilityResult);
+
       toast.success("Application created. Please upload your documents.");
-      navigate(`/verify?applicationId=${applicationId}`);
+      // Optionally, navigate to document upload after showing result
+      // navigate(`/verify?applicationId=${applicationId}`);
     } catch (error) {
       const serverMsg = error?.response?.data?.detail;
       const msg =
