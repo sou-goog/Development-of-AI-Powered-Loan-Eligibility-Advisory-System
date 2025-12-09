@@ -333,7 +333,11 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                             )
             
                                         elif data_json.get("type") == "document_uploaded":
-                                            await handle_document_logic()
+                                            logger.info("DOCUMENT UPLOADED - Verifying and Re-checking Eligibility")
+                                            structured_data["documents_verified"] = True
+                                            # Re-run eligibility check now that docs are verified
+                                            await evaluate_eligibility(structured_data, websocket, ml_service)
+
                                     else:
                                         logger.warning(f"Ignored non-dict JSON: {data_json}")
 
@@ -406,6 +410,93 @@ async def voice_stream_endpoint(websocket: WebSocket):
             await websocket.close()
         except:
             pass
+
+async def evaluate_eligibility(data: dict, websocket, ml_service):
+    """
+    Centralized logic to check eligibility criteria and trigger result OR document verification.
+    """
+    # Simply: Check strictly against 'data' which is the source of truth
+    has_income = data.get("monthly_income") is not None
+    has_score = data.get("credit_score") is not None
+    has_amount = data.get("loan_amount") is not None
+    
+    # If we have all required fields
+    if has_income and has_score and has_amount:
+        
+        # 1. VERIFICATION GATE
+        # If documents are NOT verified yet, request them first
+        if not data.get("documents_verified"):
+            
+            # Check if we already asked (to prevent spamming, optional but good UX)
+            if not data.get("verification_requested"):
+                logger.info("Critical Data Present -> REQUESTING DOCUMENT VERIFICATION")
+                
+                # Construct applicant data for frontend to pre-fill if needed
+                applicant_preview = {
+                    "monthly_income": data.get("monthly_income"),
+                    "loan_amount": data.get("loan_amount"),
+                    "credit_score": data.get("credit_score")
+                }
+                
+                await websocket.send_json({
+                    "type": "document_verification_required", 
+                    "data": {
+                        "structured_data": applicant_preview,
+                        "message": "I have your details. Please verify your identity by uploading a document to proceed with the official check."
+                    }
+                })
+                data["verification_requested"] = True
+            return
+
+        # 2. ELIGIBILITY CHECK (Only runs if documents_verified == True)
+        if not data.get("eligibility_checked"):
+            try:
+                # Prepare data for ML
+                income = float(data.get("monthly_income", 0))
+                score = int(data.get("credit_score", 0))
+                amount = float(data.get("loan_amount", 0))
+
+                # GUARD: Prevent premature check if values are effectively zero
+                if income < 100 or amount < 100 or score < 300:
+                        logger.warning(f"Premature Eligibility Check blocked: Income={income}, Score={score}, Amount={amount}")
+                        return
+
+                logger.error(f"!!! DEBUG PROACTIVE CHECK !!! Income={income}, Score={score}, Amount={amount}")
+
+                applicant = {
+                    "Monthly_Income": income,
+                    "Credit_Score": score,
+                    "Loan_Amount_Requested": amount,
+                    # Defaults
+                    "Loan_Tenure_Years": 5, 
+                    "Existing_EMI": 0,
+                }
+                
+                logger.info(f"APPLICANT FOR ML: {applicant}")
+                
+                result = ml_service.predict_eligibility(applicant)
+                data["eligibility_checked"] = True # Prevent loops
+                
+                # Send Success Result
+                await websocket.send_json({"type": "eligibility_result", "data": result})
+                
+                # Verbal Announcement
+                announcement = f"Based on your validated profile, you are {result['eligibility_score']*100:.0f} percent eligible."
+                if result['eligibility_status'] == 'eligible':
+                    announcement += " Your application looks strong."
+                else:
+                    announcement += " We might need to adjust the loan amount."
+                    
+                await websocket.send_json({"type": "assistant_transcript", "data": announcement})
+                
+                # Audio for announcement
+                audio = await synthesize_speech_deepgram(announcement)
+                if audio:
+                    b64 = base64.b64encode(audio).decode('ascii')
+                    await websocket.send_json({"type": "audio_chunk", "data": b64})
+
+            except Exception as e:
+                logger.error(f"Error in evaluate_eligibility: {e}")
 
 async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict, generate_audio: bool = True):
     """Process user text with Groq LLM and stream response."""
@@ -541,87 +632,10 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 
                 await websocket.send_json({"type": "structured_update", "data": normalized})
 
+
                 # PROACTIVE ELIGIBILITY CHECK
-                # Simplify: Check strictly against 'data' which is the source of truth
-                has_income = data.get("monthly_income") is not None
-                has_score = data.get("credit_score") is not None
-                has_amount = data.get("loan_amount") is not None
-                
-                if has_income and has_score and has_amount and not data.get("eligibility_checked"):
-                    
-                    try:
-                        # Prepare data for ML
-                        income = float(data.get("monthly_income", 0))
-                        score = int(data.get("credit_score", 0))
-                        amount = float(data.get("loan_amount", 0))
+                await evaluate_eligibility(data, websocket, ml_service)
 
-                        # GUARD: Prevent premature check if values are effectively zero
-                        if income < 100 or amount < 100 or score < 300:
-                             logger.warning(f"Premature Eligibility Check blocked: Income={income}, Score={score}, Amount={amount}")
-                             return
-
-                        logger.error(f"!!! DEBUG PROACTIVE CHECK !!! Income={income}, Score={score}, Amount={amount}")
-
-                        applicant = {
-                            "Monthly_Income": income,
-                            "Credit_Score": score,
-                            "Loan_Amount_Requested": amount,
-                            # Defaults
-                            "Loan_Tenure_Years": 5, 
-                            "Existing_EMI": 0,
-                        }
-                        
-                        logger.info(f"APPLICANT FOR ML: {applicant}")
-                        
-                        result = ml_service.predict_eligibility(applicant)
-                        data["eligibility_checked"] = True # Prevent loops
-                        
-                        # 1. Send to Frontend (Visual Card)
-                        await websocket.send_json({"type": "eligibility_result", "data": result})
-                        
-                        # 2. Force Verbal Announcement (Chain Response)
-                        # We inject a system message telling the AI the result is ready
-                        announcement_prompt = (
-                            f"SYSTEM_EVENT: Eligibility Calculated. "
-                            f"Result: {result['eligibility_status'].upper()} (Score: {result['eligibility_score']}). "
-                            f"Risk: {result['risk_level']}. "
-                            f"Inform the user immediately and enthusiastically."
-                        )
-                        
-                        # Trigger new completion for the announcement
-                        # We use the existing history + specific instruction
-                        announce_messages = messages + [{"role": "system", "content": announcement_prompt}]
-                        
-                        completion = await groq_client.chat.completions.create(
-                            model=GROQ_MODEL,
-                            messages=announce_messages,
-                            stream=True,
-                            temperature=0.7,
-                            max_tokens=500
-                        )
-                        
-                        full_announcement = ""
-                        async for chunk in completion:
-                            content = chunk.choices[0].delta.content
-                            if not content: continue
-                            
-                            await websocket.send_json({"type": "ai_token", "data": content})
-                            full_announcement += content
-                        
-                        if full_announcement.strip() and generate_audio:
-                            # Clean and Speak
-                            speech_text = full_announcement.split("|||JSON|||")[0]
-                            speech_text = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', speech_text)
-                            audio = await synthesize_speech_deepgram(speech_text)
-                            if audio:
-                                b64 = base64.b64encode(audio).decode('ascii')
-                                await websocket.send_json({"type": "audio_chunk", "data": b64})
-                                 
-                            history.append({"role": "system", "content": f"Calculated: {result['eligibility_status']}"})
-                            history.append({"role": "assistant", "content": full_announcement})
-
-                    except Exception as e:
-                        logger.error(f"Auto-Eligibility Failed: {e}")
 
             except:
                 logger.error(f"Failed to parse JSON: {json_buffer}")
