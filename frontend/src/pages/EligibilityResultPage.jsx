@@ -29,12 +29,14 @@ export default function EligibilityResultPage() {
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">
             Loan Assessment Result
           </h1>
-          <button
-            onClick={() => navigate("/")}
-            className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-full shadow hover:bg-primary-700 transition"
-          >
-            Go to Home
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate("/")}
+              className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-full shadow hover:bg-primary-700 transition"
+            >
+              Go to Home
+            </button>
+          </div>
         </div>
         <LoanResultCard
           result={result}

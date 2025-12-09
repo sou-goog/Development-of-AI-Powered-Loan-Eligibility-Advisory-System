@@ -31,6 +31,22 @@ function LoanRejectionDashboard() {
       const res = await loanAPI.shareDashboard(user_id);
       setShareLink(res.data.link);
       navigator.clipboard.writeText(res.data.link);
+      // Save the full public dashboard link and token to localStorage for manager dashboard
+      window.localStorage.setItem("publicDashboardLink", res.data.link);
+      try {
+        const url = new URL(res.data.link);
+        const parts = url.pathname.split("/");
+        const token = parts[parts.length - 1];
+        if (token) {
+          window.localStorage.setItem("publicDashboardToken", token);
+        }
+      } catch (e) {
+        // fallback: try to get token from string
+        const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
+        if (match && match[1]) {
+          window.localStorage.setItem("publicDashboardToken", match[1]);
+        }
+      }
       alert("Sharable dashboard link copied!");
     } catch (err) {
       setShareError("Failed to generate share link");

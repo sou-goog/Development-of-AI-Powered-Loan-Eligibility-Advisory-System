@@ -306,48 +306,57 @@ const LoanResultCard = ({
               {loadingExplain ? "Generating analysis..." : "Explain with AI"}
             </button>
 
-            <button
-              disabled={!applicationId || reportLoading}
-              onClick={async () => {
-                if (!applicationId) return;
-                setReportLoading(true);
-                try {
-                  // Ensure report exists
-                  await reportAPI.generateReport(applicationId);
-                  // Then trigger download
-                  const res = await reportAPI.downloadReport(applicationId);
-                  const contentType =
-                    res.headers?.["content-type"] || "application/pdf";
-                  const blob = new Blob([res.data], { type: contentType });
-                  const url = window.URL.createObjectURL(blob);
-                  // If the server returned HTML (fallback), open in new tab so browser can render it.
-                  if (contentType.includes("html")) {
-                    window.open(url, "_blank");
-                  } else {
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `loan_report_${applicationId}${
-                      contentType.includes("pdf") ? ".pdf" : ""
-                    }`;
-                    a.click();
-                    a.remove();
+            <div className="flex gap-3">
+              <button
+                disabled={!applicationId || reportLoading}
+                onClick={async () => {
+                  if (!applicationId) return;
+                  setReportLoading(true);
+                  try {
+                    // Ensure report exists
+                    await reportAPI.generateReport(applicationId);
+                    // Then trigger download
+                    const res = await reportAPI.downloadReport(applicationId);
+                    const contentType =
+                      res.headers?.["content-type"] || "application/pdf";
+                    const blob = new Blob([res.data], { type: contentType });
+                    const url = window.URL.createObjectURL(blob);
+                    // If the server returned HTML (fallback), open in new tab so browser can render it.
+                    if (contentType.includes("html")) {
+                      window.open(url, "_blank");
+                    } else {
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `loan_report_${applicationId}${
+                        contentType.includes("pdf") ? ".pdf" : ""
+                      }`;
+                      a.click();
+                      a.remove();
+                    }
+                    window.URL.revokeObjectURL(url);
+                  } catch (e) {
+                    // optional: toast
+                  } finally {
+                    setReportLoading(false);
                   }
-                  window.URL.revokeObjectURL(url);
-                } catch (e) {
-                  // optional: toast
-                } finally {
-                  setReportLoading(false);
+                }}
+                className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
+                title={
+                  !applicationId
+                    ? "Report requires an application ID"
+                    : "Download PDF report"
                 }
-              }}
-              className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
-              title={
-                !applicationId
-                  ? "Report requires an application ID"
-                  : "Download PDF report"
-              }
-            >
-              {reportLoading ? "Preparing report..." : "Download PDF Report"}
-            </button>
+              >
+                {reportLoading ? "Preparing report..." : "Download PDF Report"}
+              </button>
+              <button
+                onClick={() => window.location.href = '/admin/dashboard'}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                title="Go to Dashboard"
+              >
+                Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
