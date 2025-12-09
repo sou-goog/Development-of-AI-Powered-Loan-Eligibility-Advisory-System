@@ -62,10 +62,6 @@ const VoiceAgentRealtime = () => {
   const messagesEndRef = useRef(null);
   const modalScrollRef = useRef(null);
 
-  // Queue for processing
-  const inputQueueRef = useRef([]);
-  const isProcessingInputRef = useRef(false);
-
   /**
    * Play next audio chunk from queue
    */

@@ -49,11 +49,6 @@ export default function EligibilityResultPage() {
           extractedData={extractedData}
         />
       </div>
-<<<<<<< HEAD
     </div>
   );
 }
-=======
-    );
-}
->>>>>>> origin/backup/safe-branch

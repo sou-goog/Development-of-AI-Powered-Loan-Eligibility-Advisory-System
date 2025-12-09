@@ -18,6 +18,9 @@ import AuthPage from "./pages/AuthPage";
 import ApplyPage from "./pages/ApplyPage";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
 
+// Components
+import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtimeV2";
+
 // Dashboard pages
 import Login from "./pages/Login";
 import MainDashboard from "./pages/MainDashboard";
@@ -106,7 +109,7 @@ export default function App() {
             element={<LoanRejectionDashboard />}
           />
           {/* Voice agent */}
-          <Route path="/voice-agent" element={<VoiceAgentRealtime />} />
+          <Route path="/voice-agent" element={<VoiceAgentRealtimeV2 />} />
           {/* Public Dashboard View (read-only) */}
           <Route
             path="/public-dashboard/:token"

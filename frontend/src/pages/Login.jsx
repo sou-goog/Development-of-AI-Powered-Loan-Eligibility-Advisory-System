@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 // src/pages/Login.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -55,13 +54,8 @@ function Login() {
       setError(msg);
     }
   };
-=======
-import React from 'react';
->>>>>>> origin/backup/safe-branch
 
-const Login = () => {
   return (
-<<<<<<< HEAD
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-slate-900">
       <div className="bg-white/10 backdrop-blur-lg border border-white/20 shadow-xl p-8 rounded-2xl w-[360px]">
         <h1 className="text-center text-2xl font-bold text-white mb-2">
@@ -72,7 +66,6 @@ const Login = () => {
         </p>
 
         <form onSubmit={handleLogin} className="space-y-4">
-
           {/* Email Field */}
           <div>
             <label className="text-slate-300 text-sm">Email</label>
@@ -120,17 +113,8 @@ const Login = () => {
           Password: <b>user123</b>
         </p>
       </div>
-=======
-    <div>
-      <h2>Login</h2>
-      <form>
-        <input type="text" placeholder="Username" />
-        <input type="password" placeholder="Password" />
-        <button type="submit">Login</button>
-      </form>
->>>>>>> origin/backup/safe-branch
     </div>
   );
-};
+}
 
 export default Login;

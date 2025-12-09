@@ -16,16 +16,12 @@ import {
 import MiniChatbot from "./MiniChatbot";
 import ManagerNotifications from "./ManagerNotifications";
 import { motion, AnimatePresence } from "framer-motion";
-<<<<<<< HEAD
-import { managerAPI, reportAPI } from "../utils/api";
+import { managerAPI } from "../utils/api";
 import { toast } from "react-toastify";
 
 /**
  * ManagerDashboard - Connected to Real API
  */
-=======
-import { useNavigate } from "react-router-dom";
->>>>>>> origin/backup/safe-branch
 
 export default function ManagerDashboard() {
   /**
@@ -49,10 +45,7 @@ export default function ManagerDashboard() {
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
 
-  const navigate = useNavigate();
-
   // ---- lifecycle: load data ----
-<<<<<<< HEAD
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -73,23 +66,6 @@ export default function ManagerDashboard() {
     } finally {
       setLoading(false);
     }
-=======
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const [apps, statData] = await Promise.all([loadApplications(), loadStats()]);
-        setApplications(apps);
-        setStats(statData);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load manager data.");
-      } finally {
-        setLoading(false);
-      }
-    })();
->>>>>>> origin/backup/safe-branch
   }, []);
 
   useEffect(() => {
@@ -104,9 +80,15 @@ export default function ManagerDashboard() {
         if (filter && a.approval_status !== filter) return false;
         if (!term) return true;
         return (
-          String(a.full_name || "").toLowerCase().includes(term) ||
-          String(a.email || "").toLowerCase().includes(term) ||
-          String(a.id || "").toLowerCase().includes(term)
+          String(a.full_name || "")
+            .toLowerCase()
+            .includes(term) ||
+          String(a.email || "")
+            .toLowerCase()
+            .includes(term) ||
+          String(a.id || "")
+            .toLowerCase()
+            .includes(term)
         );
       })
       .sort((x, y) => {
@@ -162,91 +144,68 @@ export default function ManagerDashboard() {
   ];
 
   // ---- handlers ----
-  const openDetails = useCallback(
-    async (id) => {
-      // Fetch full details for the selected app
-      try {
-        const res = await managerAPI.getApplicationDetails(id);
-        setSelectedApp(res.data);
-      } catch (e) {
-        toast.error("Failed to load application details");
-      }
-    },
-    []
-  );
-
-<<<<<<< HEAD
-  const handleDecision = useCallback(async (id, decision) => {
-    // optimistic UI update
-    const oldApps = [...applications];
-    setApplications((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, approval_status: decision } : a))
-    );
-
+  const openDetails = useCallback(async (id) => {
+    // Fetch full details for the selected app
     try {
-      if (decision === "approved") {
-        await managerAPI.approveApplication(id, "Approved via Dashboard");
-      } else {
-        await managerAPI.rejectApplication(id, "Rejected via Dashboard");
-      }
-      toast.success(`Application ${decision}`);
-      // refresh stats
-      const statsRes = await managerAPI.getStatistics();
-      setStats(statsRes.data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to update decision");
-      // revert on failure
-      setApplications(oldApps);
-    }
-  }, [applications]);
-
-  const handleDownloadReport = useCallback(async (id) => {
-    try {
-      const res = await reportAPI.downloadReport(id);
-      // Create blob link to download
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `loan_report_${id}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to download report. It might not be generated yet.");
+      const res = await managerAPI.getApplicationDetails(id);
+      setSelectedApp(res.data);
+    } catch (e) {
+      toast.error("Failed to load application details");
     }
   }, []);
-=======
+
   const handleDecision = useCallback(
     async (id, decision) => {
       // optimistic UI update
+      const oldApps = [...applications];
       setApplications((prev) =>
         prev.map((a) => (a.id === id ? { ...a, approval_status: decision } : a))
       );
 
       try {
-        await postDecision(id, decision); // replace with your API
-        // refresh stats (optionally refresh apps)
-        const latestStats = await loadStats();
-        setStats(latestStats);
+        if (decision === "approved") {
+          await managerAPI.approveApplication(id, "Approved via Dashboard");
+        } else {
+          await managerAPI.rejectApplication(id, "Rejected via Dashboard");
+        }
+        toast.success(`Application ${decision}`);
+        // refresh stats
+        const statsRes = await managerAPI.getStatistics();
+        setStats(statsRes.data);
       } catch (err) {
         console.error(err);
-        setError("Failed to update decision. Reverting change.");
+        toast.error("Failed to update decision");
         // revert on failure
-        setApplications((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, approval_status: "pending" } : a))
-        );
+        setApplications(oldApps);
       }
     },
-    []
+    [applications]
   );
 
-  // Handler for 'View Dashboard' button
-  const handleViewDashboard = useCallback((id) => {
-    navigate(`/admin/dashboard?id=${id}`);
-  }, [navigate]);
->>>>>>> origin/backup/safe-branch
+  // handleDownloadReport is currently not used but kept for future implementation
+  // const handleDownloadReport = useCallback(async (id) => {
+  //   try {
+  //     const res = await reportAPI.downloadReport(id);
+  //     // Create blob link to download
+  //     const url = window.URL.createObjectURL(new Blob([res.data]));
+  //     const link = document.createElement("a");
+  //     link.href = url;
+  //     link.setAttribute("download", `loan_report_${id}.pdf`);
+  //     document.body.appendChild(link);
+  //     link.click();
+  //     link.remove();
+  //   } catch (err) {
+  //     console.error(err);
+  //     toast.error("Failed to download report. It might not be generated yet.");
+  //   }
+  // }, []);
+
+  const handleViewDashboard = useCallback(
+    (id) => {
+      openDetails(id);
+    },
+    [openDetails]
+  );
 
   // ---- small helpers ----
   const niceCurrency = (val) => {
@@ -268,52 +227,81 @@ export default function ManagerDashboard() {
           setUnreadCount={setNotifCount}
         />
       )}
-            {/* Notification Modal */}
-            <AnimatePresence>
-              {notifModal && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      {/* Notification Modal */}
+      <AnimatePresence>
+        {notifModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.96 }}
+              className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              style={{ minWidth: "320px" }}
+            >
+              <div className="px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white flex items-center justify-between sticky top-0 z-10">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    New Loan Application
+                  </h3>
+                  <p className="text-sm opacity-90">Basic Applicant Details</p>
+                </div>
+                <button
+                  onClick={() => setNotifModal(null)}
+                  className="p-2 rounded-full hover:bg-white/10"
+                  aria-label="Close"
                 >
-                  <motion.div
-                    initial={{ scale: 0.96 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0.96 }}
-                    className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-                    style={{ minWidth: '320px' }}
-                  >
-                    <div className="px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white flex items-center justify-between sticky top-0 z-10">
-                      <div>
-                        <h3 className="text-lg font-semibold">New Loan Application</h3>
-                        <p className="text-sm opacity-90">Basic Applicant Details</p>
-                      </div>
-                      <button
-                        onClick={() => setNotifModal(null)}
-                        className="p-2 rounded-full hover:bg-white/10"
-                        aria-label="Close"
-                      >
-                        <XCircle className="w-6 h-6 text-white" />
-                      </button>
-                    </div>
-                    <div className="p-6 space-y-4">
-                      <ContactField icon={Users} label="Name" value={notifModal.full_name} />
-                      <ContactField icon={Mail} label="Email" value={notifModal.email} />
-                      <ContactField icon={DollarSign} label="Loan Amount" value={`$${niceCurrency(notifModal.loan_amount)}`} />
-                      <ContactField icon={FileText} label="Application ID" value={notifModal.application_id} />
-                      <ContactField icon={FileText} label="Created At" value={notifModal.created_at ? new Date(notifModal.created_at).toLocaleString() : "N/A"} />
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <XCircle className="w-6 h-6 text-white" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <ContactField
+                  icon={Users}
+                  label="Name"
+                  value={notifModal.full_name}
+                />
+                <ContactField
+                  icon={Mail}
+                  label="Email"
+                  value={notifModal.email}
+                />
+                <ContactField
+                  icon={DollarSign}
+                  label="Loan Amount"
+                  value={`$${niceCurrency(notifModal.loan_amount)}`}
+                />
+                <ContactField
+                  icon={FileText}
+                  label="Application ID"
+                  value={notifModal.application_id}
+                />
+                <ContactField
+                  icon={FileText}
+                  label="Created At"
+                  value={
+                    notifModal.created_at
+                      ? new Date(notifModal.created_at).toLocaleString()
+                      : "N/A"
+                  }
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header */}
       <div className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-semibold text-gray-900">Manager Dashboard</h1>
+          <h1 className="text-3xl font-semibold text-gray-900">
+            Manager Dashboard
+          </h1>
           <p className="mt-1 text-sm text-gray-600">
-            Monitor and manage loan applications — material-inspired, cleaner layout.
+            Monitor and manage loan applications — material-inspired, cleaner
+            layout.
           </p>
         </div>
 
@@ -338,7 +326,22 @@ export default function ManagerDashboard() {
             className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
             title="Refresh Data"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21h5v-5" /></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+              <path d="M16 21h5v-5" />
+            </svg>
           </button>
         </div>
       </div>
@@ -357,7 +360,9 @@ export default function ManagerDashboard() {
             >
               <div>
                 <p className="text-sm text-gray-500">{s.title}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{s.value}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {s.value}
+                </p>
               </div>
               <div className={`p-3 rounded-lg ${s.bgColor}`}>
                 <Icon className={`w-6 h-6 ${s.color}`} />
@@ -384,17 +389,19 @@ export default function ManagerDashboard() {
             <button
               key={String(opt.key)}
               onClick={() => setFilter(opt.key)}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition ${filter === opt.key
+              className={`px-3 py-2 rounded-md text-sm font-medium transition ${
+                filter === opt.key
                   ? "bg-primary-600 text-white shadow"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
+              }`}
             >
               {opt.label}
             </button>
           ))}
 
           <div className="ml-2 text-sm text-gray-500">
-            {filteredApplications.length} result{filteredApplications.length !== 1 ? "s" : ""}
+            {filteredApplications.length} result
+            {filteredApplications.length !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
@@ -422,24 +429,40 @@ export default function ManagerDashboard() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Applicant</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Loan</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Eligibility</th>
-                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Status</th>
-                <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                  Applicant
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                  Loan
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                  Eligibility
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">
+                  Actions
+                </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td
+                    colSpan={5}
+                    className="px-6 py-8 text-center text-gray-500"
+                  >
                     Loading applications...
                   </td>
                 </tr>
               ) : filteredApplications.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td
+                    colSpan={5}
+                    className="px-6 py-12 text-center text-gray-500"
+                  >
                     <FileText className="mx-auto mb-2 w-8 h-8 text-gray-400" />
                     No applications found
                   </td>
@@ -459,8 +482,12 @@ export default function ManagerDashboard() {
                           <Users className="w-5 h-5" />
                         </div>
                         <div>
-                          <div className="font-medium text-gray-900">{app.full_name || "—"}</div>
-                          <div className="text-xs text-gray-500">{app.email || "—"}</div>
+                          <div className="font-medium text-gray-900">
+                            {app.full_name || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {app.email || "—"}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -468,13 +495,11 @@ export default function ManagerDashboard() {
                     <td className="px-6 py-4 text-sm">
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-gray-400" />
-<<<<<<< HEAD
                         <div className="font-medium">
-                          {niceCurrency(app.loan_amount || app.loan_amount_requested)}
+                          {niceCurrency(
+                            app.loan_amount || app.loan_amount_requested
+                          )}
                         </div>
-=======
-                        <div className="font-medium text-red-700 bg-red-50 px-2 py-1 rounded">${niceCurrency(app.loan_amount)}</div>
->>>>>>> origin/backup/safe-branch
                       </div>
                     </td>
 
@@ -482,24 +507,27 @@ export default function ManagerDashboard() {
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <Target className="w-4 h-4 text-gray-400" />
-<<<<<<< HEAD
                           <div className="text-sm font-medium">
                             {app.eligibility_score == null
                               ? "N/A"
                               : `${Math.round(
-                                (app.eligibility_score || 0) * 100
-                              )}%`}
-=======
-                          <div className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                            {app.eligibility_score == null ? "N/A" : `${Math.round((app.eligibility_score || 0) * 100)}%`}
->>>>>>> origin/backup/safe-branch
+                                  (app.eligibility_score || 0) * 100
+                                )}%`}
                           </div>
                         </div>
                         <div className="w-24 bg-gray-100 rounded-full h-2">
                           <motion.div
                             className="h-2 rounded-full bg-gradient-to-r from-primary-600 to-secondary-600"
                             initial={{ width: 0 }}
-                            animate={{ width: `${Math.max(0, Math.min(100, Math.round((app.eligibility_score || 0) * 100)))}%` }}
+                            animate={{
+                              width: `${Math.max(
+                                0,
+                                Math.min(
+                                  100,
+                                  Math.round((app.eligibility_score || 0) * 100)
+                                )
+                              )}%`,
+                            }}
                             transition={{ duration: 0.8 }}
                           />
                         </div>
@@ -568,11 +596,13 @@ export default function ManagerDashboard() {
               animate={{ scale: 1 }}
               exit={{ scale: 0.96 }}
               className="bg-white w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ minWidth: '320px' }}
+              style={{ minWidth: "320px" }}
             >
               <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white flex items-center justify-between sticky top-0 z-10">
                 <div>
-                  <h3 className="text-lg font-semibold">{selectedApp.full_name}</h3>
+                  <h3 className="text-lg font-semibold">
+                    {selectedApp.full_name}
+                  </h3>
                   <p className="text-sm opacity-90">Application Details</p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -586,18 +616,67 @@ export default function ManagerDashboard() {
                 </div>
               </div>
 
-              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 64px)' }}>
+              <div
+                className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto"
+                style={{ maxHeight: "calc(80vh - 64px)" }}
+              >
                 {/* Left column: contact & financial */}
                 <div className="space-y-4">
-                  <ContactField icon={Users} label="Name" value={selectedApp.full_name} />
-                  <ContactField icon={Mail} label="Email" value={selectedApp.email} />
-                  <ContactField icon={Phone} label="Phone" value={selectedApp.phone} />
-                  <ContactField icon={DollarSign} label="Loan Amount" value={`$${niceCurrency(selectedApp.loan_amount)}`} />
-                  <ContactField icon={BarChart3} label="Annual Income" value={`$${niceCurrency(selectedApp.annual_income)}`} />
-                  <ContactField icon={Target} label="Eligibility Score" value={selectedApp.eligibility_score == null ? "N/A" : `${Math.round((selectedApp.eligibility_score || 0) * 100)}%`} />
-                  <ContactField icon={FileText} label="Credit Score" value={selectedApp.credit_score ?? "N/A"} />
-                  <ContactField icon={CheckCircle} label="Approval Status" value={selectedApp.approval_status} />
-                  <ContactField icon={FileText} label="Created At" value={selectedApp.created_at ? new Date(selectedApp.created_at).toLocaleString() : "N/A"} />
+                  <ContactField
+                    icon={Users}
+                    label="Name"
+                    value={selectedApp.full_name}
+                  />
+                  <ContactField
+                    icon={Mail}
+                    label="Email"
+                    value={selectedApp.email}
+                  />
+                  <ContactField
+                    icon={Phone}
+                    label="Phone"
+                    value={selectedApp.phone}
+                  />
+                  <ContactField
+                    icon={DollarSign}
+                    label="Loan Amount"
+                    value={`$${niceCurrency(selectedApp.loan_amount)}`}
+                  />
+                  <ContactField
+                    icon={BarChart3}
+                    label="Annual Income"
+                    value={`$${niceCurrency(selectedApp.annual_income)}`}
+                  />
+                  <ContactField
+                    icon={Target}
+                    label="Eligibility Score"
+                    value={
+                      selectedApp.eligibility_score == null
+                        ? "N/A"
+                        : `${Math.round(
+                            (selectedApp.eligibility_score || 0) * 100
+                          )}%`
+                    }
+                  />
+                  <ContactField
+                    icon={FileText}
+                    label="Credit Score"
+                    value={selectedApp.credit_score ?? "N/A"}
+                  />
+                  <ContactField
+                    icon={CheckCircle}
+                    label="Approval Status"
+                    value={selectedApp.approval_status}
+                  />
+                  <ContactField
+                    icon={FileText}
+                    label="Created At"
+                    value={
+                      selectedApp.created_at
+                        ? new Date(selectedApp.created_at).toLocaleString()
+                        : "N/A"
+                    }
+                  />
                 </div>
 
                 {/* Right column: Uploaded Documents */}
@@ -605,19 +684,31 @@ export default function ManagerDashboard() {
                   <div className="bg-white p-4 rounded-lg border border-gray-100">
                     <div className="flex items-center gap-2 mb-2">
                       <FileText className="w-5 h-5 text-primary-600" />
-                      <span className="font-semibold text-gray-800">Uploaded Documents</span>
+                      <span className="font-semibold text-gray-800">
+                        Uploaded Documents
+                      </span>
                     </div>
                     {/* Placeholder for documents. Replace with actual document list if available in selectedApp */}
-                    {selectedApp.documents && selectedApp.documents.length > 0 ? (
+                    {selectedApp.documents &&
+                    selectedApp.documents.length > 0 ? (
                       <ul className="list-disc pl-5">
                         {selectedApp.documents.map((doc, i) => (
                           <li key={i} className="mb-1">
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-primary-600 underline">{doc.name}</a>
+                            <a
+                              href={doc.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary-600 underline"
+                            >
+                              {doc.name}
+                            </a>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-sm text-gray-500">No documents uploaded.</div>
+                      <div className="text-sm text-gray-500">
+                        No documents uploaded.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -626,7 +717,6 @@ export default function ManagerDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-
 
       {/* MiniChatbot fixed in bottom-right */}
       <div className="fixed bottom-6 right-6 z-50">
@@ -649,88 +739,59 @@ function StatusBadge({ status }) {
     undefined: { className: "bg-gray-100 text-gray-700", text: "Unknown" },
   };
   const s = statusMap[status] || statusMap.null;
-  return <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${s.className}`}>{s.text}</span>;
+  return (
+    <span
+      className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${s.className}`}
+    >
+      {s.text}
+    </span>
+  );
 }
 
 function ContactField({ icon: Icon, label, value }) {
   // Highlight Loan Amount and Eligibility Score
   let valueColor = "text-gray-900";
-  if (label === "Loan Amount") valueColor = "text-red-700 bg-red-50 px-2 py-1 rounded font-extrabold";
-  if (label === "Eligibility Score") valueColor = "text-blue-700 bg-blue-50 px-2 py-1 rounded font-extrabold";
+  if (label === "Loan Amount")
+    valueColor = "text-red-700 bg-red-50 px-2 py-1 rounded font-extrabold";
+  if (label === "Eligibility Score")
+    valueColor = "text-blue-700 bg-blue-50 px-2 py-1 rounded font-extrabold";
   return (
     <div className="bg-white p-3 rounded-lg border border-gray-100">
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
         <Icon className="w-4 h-4 text-gray-400" />
         <div>{label}</div>
       </div>
-      <div className={`text-lg font-extrabold ${valueColor}`}>{value ?? "N/A"}</div>
+      <div className={`text-lg font-extrabold ${valueColor}`}>
+        {value ?? "N/A"}
+      </div>
     </div>
   );
 }
 
-<<<<<<< HEAD
-=======
 /* ---------------------------
    Placeholder network functions
    Replace with real API implementations
+   Currently unused but kept for reference
    --------------------------- */
 
-async function loadApplications() {
-  // TODO: Replace with your API call, e.g.:
-  // const res = await fetch("/api/manager/applications");
-  // return await res.json();
-  // For now return mocked data so component works out-of-the-box:
-  await sleep(200);
-  return [
-    {
-      id: "app_1",
-      full_name: "Alex Morgan",
-      email: "alex@example.com",
-      phone: "555-1234",
-      loan_amount: 25000,
-      annual_income: 65000,
-      credit_score: 720,
-      eligibility_score: 0.78,
-      approval_status: "pending",
-      created_at: "2025-11-30T10:00:00Z",
-    },
-    {
-      id: "app_2",
-      full_name: "Samira Khan",
-      email: "samira@example.com",
-      phone: "555-9876",
-      loan_amount: 10000,
-      annual_income: 42000,
-      credit_score: 660,
-      eligibility_score: 0.62,
-      approval_status: "approved",
-      created_at: "2025-11-28T08:00:00Z",
-    },
-  ];
-}
+// async function loadApplications() {
+// TODO: Replace with your API call, e.g.:
+// const res = await fetch("/api/manager/applications");
+// return await res.json();
+// For now return mocked data so component works out-of-the-box:
+// await sleep(200);
+// return [...]
+// }
 
-async function loadStats() {
-  // TODO: replace with real API call
-  await sleep(80);
-  return {
-    total_applications: 2,
-    approved_applications: 1,
-    rejected_applications: 0,
-    pending_applications: 1,
-  };
-}
+// async function loadStats() {
+// TODO: replace with real API call
+// await sleep(80);
+// return {...}
+// }
 
-async function postDecision(id, decision) {
-  // Replace with POST/PUT request to set decision
-  await sleep(150);
-  // Example: return await fetch(`/api/applications/${id}/decision`, {...})
-  return { ok: true };
-}
-
-
-
-function sleep(ms = 100) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-
->>>>>>> origin/backup/safe-branch
+// async function postDecision(id, decision) {
+// Replace with POST/PUT request to set decision
+// await sleep(150);
+// Example: return await fetch(`/api/applications/${id}/decision`, {...})
+// return { ok: true };
+// }
