@@ -201,12 +201,16 @@ class MLModelService:
                 warnings.append('XGBoost model is not loaded. Prediction is not possible.')
             if not self.x_columns:
                 warnings.append('Model feature columns (X_columns) are missing. Prediction may be invalid.')
+            
+            logger.info(f"DEBUG: Models available: {list(self.models.keys())}, X_columns loaded: {self.x_columns is not None}")
 
             # Prepare features with preprocessing
             if self.x_columns and 'xgboost' in self.models:
                 features_df = self._prepare_features_v2(applicant_data)
+                logger.info(f"DEBUG: Using v2 feature preparation with {len(self.x_columns)} columns")
             else:
                 features_df = self._prepare_features(applicant_data)
+                logger.info(f"DEBUG: Using legacy feature preparation")
             
             # Make prediction (use dummy if model not loaded)
             eligibility_score = 0.5  # Default score
@@ -218,12 +222,20 @@ class MLModelService:
                     # Use aligned DataFrame directly
                     X = features_df[self.x_columns]
                     
+                    # Check for NaN values and log them
+                    nan_cols = X.columns[X.isna().any()].tolist()
+                    if nan_cols:
+                        logger.warning(f"DEBUG: NaN columns detected: {nan_cols}")
+                        X = X.fillna(0)  # Fill NaN with 0
+                    
                     # DIAGNOSTIC: Log the feature vector
                     row_dict = X.iloc[0].to_dict()
                     logger.info(f"ML PREDICTION INPUT: Income={row_dict.get('Monthly_Income')}, Score={row_dict.get('Credit_Score')}, Amount={row_dict.get('Loan_Amount_Requested')}, DTI={row_dict.get('Debt_to_Income_Ratio')}")
-                    # logger.info(f"Full Vector: {row_dict}")
+                    logger.info(f"DEBUG: Full feature dict: {row_dict}")
 
-                    eligibility_score = float(self.models['xgboost'].predict_proba(X)[0][1])
+                    pred_proba = self.models['xgboost'].predict_proba(X)
+                    eligibility_score = float(pred_proba[0][1])
+                    logger.info(f"DEBUG: Raw model output: {pred_proba}, Eligibility score: {eligibility_score}")
                     xgb_score = eligibility_score
                     model_results = {'xgboost': eligibility_score}
                 else:
@@ -266,6 +278,7 @@ class MLModelService:
                 "warnings": warnings
             }
             logger.info(f"Loan prediction generated: {model_results}")
+            logger.info(f"DEBUG: eligibility_score={eligibility_score}, eligibility_status={eligibility_status}")
             if warnings:
                 logger.warning(f"Loan prediction warnings: {warnings}")
             return result
