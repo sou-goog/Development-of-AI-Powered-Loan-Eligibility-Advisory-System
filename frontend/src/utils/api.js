@@ -1,3 +1,5 @@
+// ...existing code...
+// ...existing code...
 // API utility for frontend communication
 import axios from "axios";
 import { auth } from "./auth";
@@ -95,6 +97,9 @@ export const loanAPI = {
     api.put(`/loan/applications/${applicationId}`, updateData),
 
   getLastApplication: () => api.get("/loan/applications/last"),
+
+  getApplication: (applicationId) =>
+    api.get(`/loan/applications/${applicationId}`),
 
   verifyDocument: (applicationId, extractedData) =>
     api.put(`/loan/applications/${applicationId}/verify-document`, {

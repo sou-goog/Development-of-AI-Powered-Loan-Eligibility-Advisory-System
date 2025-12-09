@@ -15,6 +15,10 @@ import {
 } from "lucide-react";
 import UserNotifications from "./UserNotifications";
 
+
+
+
+
 /*
   Redesigned NAVBAR
   - Cleaner structure
@@ -71,6 +75,8 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path;
 
+
+
   return (
     <>
       {/* Top Navbar */}
@@ -96,6 +102,7 @@ export default function Navbar() {
 
         {/* Right section */}
         <div className="flex items-center gap-4">
+
           {/* User Notifications */}
           {isAuthenticated && !isManager && user?.id && (
             <UserNotifications userId={user.id} />
