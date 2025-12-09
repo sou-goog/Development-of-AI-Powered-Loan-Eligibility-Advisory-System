@@ -32,6 +32,8 @@ import Transcripts from "./pages/Transcripts";
 import SystemSettings from "./pages/SystemSettings";
 import ProjectOverview from "./pages/ProjectOverview";
 import LoanRejectionDashboard from "./pages/LoanRejectionDashboard";
+import HelpPage from "./pages/HelpPage";
+import ContactPage from "./pages/ContactPage";
 
 // Utils
 
@@ -91,6 +93,10 @@ export default function App() {
             path="/eligibility-result"
             element={<EligibilityResultPage />}
           />
+          {/* Help Page */}
+          <Route path="/help" element={<HelpPage />} />
+          {/* Contact Page */}
+          <Route path="/contact" element={<ContactPage />} />
           {/* Public Login (Applicant Login) */}
           <Route path="/auth" element={<AuthPage />} />
           {/* Admin Login */}
