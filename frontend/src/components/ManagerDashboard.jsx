@@ -216,14 +216,6 @@ export default function ManagerDashboard() {
   // ---- render ----
   return (
     <div className="w-full min-h-screen bg-gray-50">
-      {/* Always show ManagerNotifications component at the top right */}
-      <ManagerNotifications
-        onNotificationClick={setNotifModal}
-        setNotifCount={setNotifCount}
-        setUnreadCount={setNotifCount}
-        onNewNotification={fetchData}
-      />
-
       {/* Notification Modal */}
       <AnimatePresence>
         {notifModal && (
@@ -363,6 +355,13 @@ export default function ManagerDashboard() {
                 <path d="M16 21h5v-5" />
               </svg>
             </button>
+            {/* Notifications Component - Positioned beside other controls */}
+            <ManagerNotifications
+              onNotificationClick={setNotifModal}
+              setNotifCount={setNotifCount}
+              setUnreadCount={setNotifCount}
+              onNewNotification={fetchData}
+            />
           </div>
         </div>
 

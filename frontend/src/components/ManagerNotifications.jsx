@@ -165,7 +165,7 @@ function ManagerNotifications({
   };
 
   return (
-    <div className="fixed top-4 right-4 z-40">
+    <div className="relative">
       {/* Notification Bell Button */}
       <motion.button
         whileHover={{ scale: 1.05 }}
@@ -196,7 +196,7 @@ function ManagerNotifications({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-16 right-0 w-96 max-h-screen rounded-lg shadow-2xl bg-white border border-gray-200 overflow-hidden flex flex-col"
+            className="absolute top-full right-0 mt-2 w-96 max-h-[calc(100vh-120px)] rounded-lg shadow-2xl bg-white border border-gray-200 overflow-hidden flex flex-col z-50"
           >
             {/* Header */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10">
