@@ -3,7 +3,7 @@ Loan Prediction Routes + Application management
 (Original file preserved; added missing GET /applications/{application_id} route)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.database import get_db, LoanApplication
@@ -81,6 +81,7 @@ async def get_application(application_id: int, db: Session = Depends(get_db)):
 @router.post("/applications")
 async def create_loan_application(
     application: LoanApplicationCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -143,7 +144,6 @@ async def create_loan_application(
         # Send notification to managers via WebSocket
         try:
             from app.routes.notification_routes import send_manager_notification
-            import asyncio
             notification = {
                 "type": "new_application",
                 "application_id": db_application.id,
@@ -152,12 +152,9 @@ async def create_loan_application(
                 "loan_amount": db_application.loan_amount_requested,
                 "created_at": db_application.created_at.isoformat()
             }
-            # If inside an async context, use await; else, use asyncio.create_task
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(send_manager_notification(notification))
-            else:
-                loop.run_until_complete(send_manager_notification(notification))
+            # Use background task for notification
+            background_tasks.add_task(send_manager_notification, notification)
+            logger.info(f"Notification queued for application {db_application.id}")
         except Exception as notify_err:
             logger.error(f"Manager notification error: {notify_err}")
 
@@ -176,6 +173,7 @@ async def create_loan_application(
 async def verify_application_document(
     application_id: int,
     request: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -273,7 +271,6 @@ async def verify_application_document(
         # Send notification to managers when document verification is completed
         try:
             from app.routes.notification_routes import send_manager_notification
-            import asyncio
             notification = {
                 "type": "application_documents_verified",
                 "application_id": db_application.id,
@@ -283,11 +280,9 @@ async def verify_application_document(
                 "created_at": app.created_at.isoformat() if app.created_at else datetime.utcnow().isoformat(),
                 "message": f"Documents verified for {app.full_name}"
             }
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(send_manager_notification(notification))
-            else:
-                loop.run_until_complete(send_manager_notification(notification))
+            # Use background task for notification
+            background_tasks.add_task(send_manager_notification, notification)
+            logger.info(f"Notification queued for document verification of application {application_id}")
         except Exception as notify_err:
             logger.error(f"Manager notification error during document verification: {notify_err}")
 
