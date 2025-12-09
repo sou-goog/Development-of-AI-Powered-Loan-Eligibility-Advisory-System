@@ -209,6 +209,7 @@ class MLModelService:
                 features_df = self._prepare_features(applicant_data)
             
             # Make prediction (use dummy if model not loaded)
+            eligibility_score = 0.5  # Default score
             xgb_score = 0.5  # Default score
             model_results = {}
             
@@ -254,6 +255,8 @@ class MLModelService:
             recommendations = self._generate_recommendations(applicant_data, eligibility_score)
             
             result = {
+                "eligibility_score": eligibility_score,
+                "eligibility_status": eligibility_status,
                 "models": model_results,
                 "risk_level": risk_level,
                 "recommendations": recommendations,
