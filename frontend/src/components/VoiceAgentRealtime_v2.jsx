@@ -638,7 +638,14 @@ const VoiceAgentRealtime = () => {
                 button above.
               </p>
               <button
-                onClick={() => setShowDocumentUpload(false)}
+                onClick={() => {
+                  setShowDocumentUpload(false);
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(
+                      JSON.stringify({ type: "verification_completed" })
+                    );
+                  }
+                }}
                 className="w-full py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
               >
                 Done / Finish Verification

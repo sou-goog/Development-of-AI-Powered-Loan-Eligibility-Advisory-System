@@ -333,10 +333,16 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                             )
             
                                         elif data_json.get("type") == "document_uploaded":
-                                            logger.info("DOCUMENT UPLOADED - Verifying and Re-checking Eligibility")
+                                            logger.info("DOCUMENT UPLOADED - Acknowledged")
+                                            # Wait for user to click "Done" in frontend
+                                            pass
+
+                                        elif data_json.get("type") == "verification_completed":
+                                            logger.info("VERIFICATION COMPLETED - Verifying and Re-checking Eligibility")
                                             structured_data["documents_verified"] = True
                                             # Re-run eligibility check now that docs are verified
                                             await evaluate_eligibility(structured_data, websocket, ml_service)
+
 
                                     else:
                                         logger.warning(f"Ignored non-dict JSON: {data_json}")
