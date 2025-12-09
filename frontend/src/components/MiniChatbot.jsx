@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../utils/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, User, MessageCircle, Minimize2, Send } from "lucide-react";
-import VoiceAgentButton from "./VoiceAgentButton"; // safe voice button
 
 export default function MiniChatbot({
   applicationId = null,
@@ -503,16 +502,6 @@ export default function MiniChatbot({
             >
               <Send className="w-4 h-4" />
             </motion.button>
-
-            {/* Voice button far right */}
-            <div className="flex-shrink-0">
-              <VoiceAgentButton
-                onVoiceResult={(text) => {
-                  setInputValue(text);
-                  handleLocalSend();
-                }}
-              />
-            </div>
           </div>
         </div>
       </div>

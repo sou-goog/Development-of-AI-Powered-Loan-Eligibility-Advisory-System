@@ -209,7 +209,10 @@ class MLModelService:
                 features_df = self._prepare_features(applicant_data)
             
             # Make prediction (use dummy if model not loaded)
-            if self.model:
+            xgb_score = 0.5  # Default score
+            model_results = {}
+            
+            if self.models and 'xgboost' in self.models:
                 if self.x_columns is not None:
                     # Use aligned DataFrame directly
                     X = features_df[self.x_columns]
@@ -219,7 +222,9 @@ class MLModelService:
                     logger.info(f"ML PREDICTION INPUT: Income={row_dict.get('Monthly_Income')}, Score={row_dict.get('Credit_Score')}, Amount={row_dict.get('Loan_Amount_Requested')}, DTI={row_dict.get('Debt_to_Income_Ratio')}")
                     # logger.info(f"Full Vector: {row_dict}")
 
-                    eligibility_score = float(self.model.predict_proba(X)[0][1])
+                    eligibility_score = float(self.models['xgboost'].predict_proba(X)[0][1])
+                    xgb_score = eligibility_score
+                    model_results = {'xgboost': eligibility_score}
                 else:
                     # Legacy path: scale numerics and concat encoded categoricals
                     numerical_data = features_df[self.numerical_features]
@@ -231,10 +236,14 @@ class MLModelService:
                         scaled_numerical,
                         features_df[self.categorical_features].values
                     ])
-                    eligibility_score = float(self.model.predict_proba(features_processed)[0][1])
+                    eligibility_score = float(self.models['xgboost'].predict_proba(features_processed)[0][1])
+                    xgb_score = eligibility_score
+                    model_results = {'xgboost': eligibility_score}
             else:
                 # Dummy prediction logic for testing when no model is available
                 eligibility_score = self._dummy_predict(applicant_data)
+                xgb_score = eligibility_score
+                model_results = {'dummy': eligibility_score}
                 logger.warning("Using dummy prediction - no trained model available")
             
             # Determine eligibility status and risk level
