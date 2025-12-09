@@ -157,18 +157,11 @@ async def get_all_applications(
     """
     try:
         from sqlalchemy import desc
-        from sqlalchemy import and_
         query = db.query(LoanApplication).order_by(desc(LoanApplication.created_at))
 
-        # Only show applications that have completed the applicant flow:
-        # - document verified
-        # - eligibility score present
-        query = query.filter(
-            and_(
-                LoanApplication.document_verified == True,
-                LoanApplication.eligibility_score.isnot(None),
-            )
-        )
+        # Show ALL applications regardless of completion status
+        # This allows managers to see new applications immediately when they're created
+        # Applications progress through stages: created → document verified → eligibility checked → approved/rejected
         
         if status_filter:
             query = query.filter(LoanApplication.approval_status == status_filter)

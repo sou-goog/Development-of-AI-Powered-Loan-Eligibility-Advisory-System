@@ -221,6 +221,7 @@ export default function ManagerDashboard() {
         onNotificationClick={setNotifModal}
         setNotifCount={setNotifCount}
         setUnreadCount={setNotifCount}
+        onNewNotification={fetchData}
       />
 
       {/* Notification Modal */}

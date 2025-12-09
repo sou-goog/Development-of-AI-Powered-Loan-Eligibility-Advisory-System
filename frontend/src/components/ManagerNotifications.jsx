@@ -10,6 +10,7 @@ function ManagerNotifications({
   onNotificationClick,
   setNotifCount,
   setUnreadCount,
+  onNewNotification,
 }) {
   const [notifications, setNotifications] = useState([]);
   const [showPanel, setShowPanel] = useState(false);
@@ -95,6 +96,11 @@ function ManagerNotifications({
               // Auto-show panel for new notifications
               setShowPanel(true);
 
+              // Trigger callback to refresh dashboard data
+              if (onNewNotification) {
+                onNewNotification(newNotif);
+              }
+
               return updated;
             });
           }
@@ -125,7 +131,7 @@ function ManagerNotifications({
     } catch (err) {
       console.error("WebSocket connection failed:", err);
     }
-  }, [setNotifCount, setUnreadCount]);
+  }, [setNotifCount, setUnreadCount, onNewNotification]);
 
   // Initialize WebSocket connection
   useEffect(() => {
