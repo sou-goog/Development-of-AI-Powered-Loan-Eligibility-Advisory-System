@@ -467,7 +467,12 @@ async def predict_for_application(
             "Debt_to_Income_Ratio": app.debt_to_income_ratio,
             "Income_Stability_Score": app.income_stability_score,
             "Credit_Utilization_Ratio": app.credit_utilization_ratio,
-            "Loan_to_Value_Ratio": app.loan_to_value_ratio
+            "Loan_to_Value_Ratio": app.loan_to_value_ratio,
+            
+            # Verification features
+            "Bank_Verified": int(app.document_verified) if app.document_verified else 0,
+            "Document_Verified": int(app.document_verified) if app.document_verified else 0,
+            "Voice_Verified": 0  # Set to 0 for now, can be updated if voice verification is implemented
         }
         # Compute and persist DTI if missing/zero
         try:
