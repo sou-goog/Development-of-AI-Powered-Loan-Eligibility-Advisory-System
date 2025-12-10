@@ -494,12 +494,12 @@ const LoanResultCard = ({
         {(analysis || analysisError) && (
           <div className="card mb-6 text-left max-h-[35vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold text-primary-600">
-                AI Analysis
+              <h4 className="text-lg font-semibold text-gray-900">
+                <span className="text-green-300">AI Analysis</span>
               </h4>
               {analysisError && (
                 <button
-                  className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                  className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-900"
                   onClick={async () => {
                     if (!applicationId) return;
                     setLoadingExplain(true);
@@ -523,8 +523,8 @@ const LoanResultCard = ({
               )}
             </div>
             {analysis && (
-              <div className="mt-4 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                <div className="prose prose-sm max-w-none text-gray-700 prose-headings:font-semibold prose-headings:text-indigo-900 prose-p:text-gray-700 prose-strong:text-indigo-700 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1">
+              <div className="mt-4 p-4 bg-gray-100 rounded-xl border border-gray-300">
+                <div className="prose prose-sm max-w-none text-gray-900 prose-headings:font-semibold prose-headings:text-gray-900 prose-p:text-gray-900 prose-strong:text-gray-900 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1">
                   <ReactMarkdown>{analysis}</ReactMarkdown>
                 </div>
               </div>

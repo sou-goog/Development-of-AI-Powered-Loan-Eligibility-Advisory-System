@@ -119,10 +119,10 @@ function LoanRejectionDashboard() {
           {metrics.map((m, index) => (
             <div
               key={index}
-              className="bg-slate-900/60 border border-slate-700 rounded-lg p-3"
+              className="bg-gray-200 border border-gray-300 rounded-lg p-3"
             >
-              <p className="text-xs text-slate-400">{m.label}</p>
-              <p className="text-base font-semibold text-white mt-1">
+              <p className="text-xs text-gray-600">{m.label}</p>
+              <p className="text-base font-semibold text-black mt-1">
                 {m.value}
               </p>
             </div>

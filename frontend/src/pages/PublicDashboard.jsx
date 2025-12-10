@@ -108,8 +108,8 @@ function PublicDashboard() {
               className={`transition-all duration-200 shadow-lg p-4 rounded-lg border-2 border-transparent hover:border-yellow-400 cursor-pointer focus:outline-none ${getModelColor(idx)} ${selectedModel === model ? 'ring-4 ring-yellow-300' : ''}`}
               onClick={() => setSelectedModel(model)}
             >
-              <h3 className="text-lg font-bold mb-2 text-white drop-shadow">{model.replace(/_/g, ' ').toUpperCase()}</h3>
-              <div className="mb-2 text-sm text-white">
+              <h3 className="text-lg font-bold mb-2 text-yellow-100 drop-shadow">{model.replace(/_/g, ' ').toUpperCase()}</h3>
+              <div className="mb-2 text-sm text-slate-100">
                 <span className="font-semibold">Accuracy:</span> <span className="text-yellow-200 font-bold">{metrics.accuracy}</span>
                 <br />
                 <span className="font-semibold">F1 Score:</span> <span className="text-green-200 font-bold">{metrics.f1}</span>
