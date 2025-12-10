@@ -302,16 +302,21 @@ const VoiceAgentRealtime = () => {
   /**
    * Initialize WebSocket connection to backend
    */
-  const connectWebSocket = useCallback(() => {
+  const connectWebSocket = useCallback((onOpenCallback = null) => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.hostname}:8000/api/voice/stream`;
 
     try {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log("WebSocket connected");
         setIsConnected(true);
+        if (onOpenCallback) onOpenCallback();
       };
 
       ws.onmessage = (event) => {
@@ -331,11 +336,12 @@ const VoiceAgentRealtime = () => {
       ws.onclose = () => {
         console.log("WebSocket closed");
         setIsConnected(false);
-        setTimeout(() => {
-          if (wsRef.current === ws) {
-            connectWebSocket();
-          }
-        }, 3000); // Auto-reconnect after 3 seconds
+        // Only auto-reconnect if we are NOT intentionally recording/toggling
+        // setTimeout(() => {
+        //   if (wsRef.current === ws) {
+        //     connectWebSocket();
+        //   }
+        // }, 3000); 
       };
 
       wsRef.current = ws;
@@ -492,8 +498,14 @@ const VoiceAgentRealtime = () => {
   const handleCallToggle = () => {
     if (isRecording) {
       stopRecording();
-    } else if (isConnected) {
-      startRecording();
+      // Close connection to reset backend state
+      if (wsRef.current) wsRef.current.close();
+    } else {
+      // Start fresh connection -> Then record
+      setIsConnected(false); // UI feedback
+      connectWebSocket(() => {
+        startRecording();
+      });
     }
   };
 
