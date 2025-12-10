@@ -168,7 +168,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1500&vad_events=true&endpointing=600"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -379,6 +379,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
             # Start Receiver Task (Deepgram Transcript -> Frontend/LLM)
             async def receiver_task():
                 logger.info("RECEIVER TASK STARTED")
+                llm_task = None
                 try:
                     async for msg in dg_socket:
                         try:
@@ -409,10 +410,17 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                          # logger.info(f"Deepgram transcript: {sentence}")
                                          pass
                                     
+                            # Interruption Handling: Cancel previous LLM task if user speaks again
                                     if is_final and len(sentence) > 0:
                                         logger.info(f"User said: {sentence}")
+                                        
+                                        # Cancel previous task if still running
+                                        if llm_task and not llm_task.done():
+                                            logger.info("Interrupting previous LLM task...")
+                                            llm_task.cancel()
+                                            
                                         await websocket.send_json({"type": "final_transcript", "data": sentence})
-                                        await process_llm_response(sentence, websocket, conversation_history, structured_data)
+                                        llm_task = asyncio.create_task(process_llm_response(sentence, websocket, conversation_history, structured_data))
                         except Exception as e:
                              logger.error(f"Error processing Deepgram message: {e} - RAW: {msg[:200]}")
                              continue
