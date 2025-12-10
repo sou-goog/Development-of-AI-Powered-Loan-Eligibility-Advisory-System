@@ -1,5 +1,5 @@
 // src/pages/LoanAnalytics.jsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 import AdminLayout from "../components/AdminLayout";
 import {
   PieChart,
@@ -14,39 +14,52 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { managerAPI } from "../utils/api";
 
 function LoanAnalytics() {
-  const [eligibilityData, setEligibilityData] = useState([]);
-  const [loanRanges, setLoanRanges] = useState([]);
-  const [stabilityData, setStabilityData] = useState([]);
-  const [incomeApproval, setIncomeApproval] = useState([]);
+  // Eligibility Breakdown
+  const eligibilityData = [
+    { name: "Eligible", value: 276 },
+    { name: "Not Eligible", value: 152 },
+  ];
 
   const COLORS = ["#34d399", "#ef4444"];
 
-  useEffect(() => {
-    async function fetchAnalytics() {
-      try {
-        const res = await managerAPI.getLoanAnalytics(); // backend API
-        setEligibilityData(res.data.eligibilityBreakdown || []);
-        setLoanRanges(res.data.loanAmountDistribution || []);
-        setStabilityData(res.data.employmentStability || []);
-        setIncomeApproval(res.data.incomeVsApproval || []);
-      } catch (err) {
-        console.error("Error fetching analytics:", err);
-      }
-    }
-    fetchAnalytics();
-  }, []);
+  // Loan Range Distribution
+  const loanRanges = [
+    { range: "< 2L", count: 95 },
+    { range: "2–5L", count: 162 },
+    { range: "5–10L", count: 112 },
+    { range: "> 10L", count: 59 },
+  ];
+
+  // Credit Score Distribution
+  const creditScoreData = [
+    { score: "300-500", count: 35 },
+    { score: "500-650", count: 96 },
+    { score: "650-750", count: 145 },
+    { score: "750+", count: 152 },
+  ];
+
+  // Income vs Loan Approval
+  const incomeApproval = [
+    { income: "20K", approval: 42 },
+    { income: "40K", approval: 55 },
+    { income: "60K", approval: 68 },
+    { income: "80K", approval: 77 },
+    { income: "100K", approval: 84 },
+  ];
 
   return (
     <AdminLayout>
       <h1 className="text-xl font-semibold mb-6">Loan Eligibility Analytics</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
         {/* Pie Chart */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <p className="text-sm font-semibold mb-3">Eligibility Breakdown</p>
+          <p className="text-sm font-semibold mb-3">
+            Eligibility Breakdown
+          </p>
           <div className="h-64 flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -69,9 +82,11 @@ function LoanAnalytics() {
           </div>
         </div>
 
-        {/* Loan Amount Distribution */}
+        {/* Loan Amount Distribution Chart */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <p className="text-sm font-semibold mb-3">Loan Amount Distribution</p>
+          <p className="text-sm font-semibold mb-3">
+            Loan Amount Distribution
+          </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={loanRanges}>
@@ -84,13 +99,15 @@ function LoanAnalytics() {
           </div>
         </div>
 
-        {/* Employment Stability */}
+        {/* Credit Score Graph */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-          <p className="text-sm font-semibold mb-3">Employment Stability</p>
+          <p className="text-sm font-semibold mb-3">
+            Credit Score Distribution
+          </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stabilityData}>
-                <XAxis dataKey="years" />
+              <BarChart data={creditScoreData}>
+                <XAxis dataKey="score" />
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="count" fill="#a78bfa" />
@@ -100,16 +117,24 @@ function LoanAnalytics() {
         </div>
       </div>
 
-      {/* Line Chart */}
+      {/* Line Chart Row */}
       <div className="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <p className="text-sm font-semibold mb-3">Income Level vs Loan Approval %</p>
+        <p className="text-sm font-semibold mb-3">
+          Income Level vs Loan Approval %
+        </p>
+
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={incomeApproval}>
               <XAxis dataKey="income" />
               <YAxis />
               <Tooltip />
-              <Line type="monotone" dataKey="approval" stroke="#facc15" strokeWidth={2} />
+              <Line
+                type="monotone"
+                dataKey="approval"
+                stroke="#facc15"
+                strokeWidth={2}
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>

@@ -1,32 +1,59 @@
 // src/pages/ApplicationsTable.jsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 import AdminLayout from "../components/AdminLayout";
-import { managerAPI } from "../utils/api";
 
 function ApplicationsTable() {
-  const [applications, setApplications] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchApplications() {
-      try {
-        const res = await managerAPI.getApplications(); // backend API call
-        setApplications(res.data.items || []);
-      } catch (err) {
-        console.error("Error fetching applications:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchApplications();
-  }, []);
-
-  if (loading)
-    return (
-      <AdminLayout>
-        <p className="text-slate-300">Loading applications...</p>
-      </AdminLayout>
-    );
+  // Sample application data (later can be connected to backend)
+  const applications = [
+    {
+      id: 1,
+      name: "Rahul Verma",
+      income: 45000,
+      credit: 720,
+      loan: 200000,
+      score: 0.82,
+      result: "Eligible",
+      mode: "Voice",
+      date: "2025-01-12",
+      confidence: "91%",
+    },
+    {
+      id: 2,
+      name: "Sneha Rao",
+      income: 30000,
+      credit: 650,
+      loan: 150000,
+      score: 0.66,
+      result: "Eligible",
+      mode: "Text",
+      date: "2025-01-10",
+      confidence: "83%",
+    },
+    {
+      id: 3,
+      name: "Amit Shah",
+      income: 25000,
+      credit: 580,
+      loan: 180000,
+      score: 0.42,
+      result: "Not Eligible",
+      mode: "Voice",
+      date: "2025-01-09",
+      confidence: "54%",
+    },
+    {
+      id: 4,
+      name: "Priya Singh",
+      income: 80000,
+      credit: 810,
+      loan: 400000,
+      score: 0.93,
+      result: "Eligible",
+      mode: "Text",
+      date: "2025-01-06",
+      confidence: "96%",
+    },
+  ];
 
   return (
     <AdminLayout>
@@ -39,8 +66,9 @@ function ApplicationsTable() {
               <th className="py-3 px-2">ID</th>
               <th className="py-3 px-2">Name</th>
               <th className="py-3 px-2">Income</th>
+              <th className="py-3 px-2">Credit Score</th>
               <th className="py-3 px-2">Loan Amount</th>
-              <th className="py-3 px-2">Eligibility Probability</th>
+              <th className="py-3 px-2">Eligibility Score</th>
               <th className="py-3 px-2">Result</th>
               <th className="py-3 px-2">Mode</th>
               <th className="py-3 px-2">Date</th>
@@ -56,11 +84,11 @@ function ApplicationsTable() {
               >
                 <td className="py-3 px-2">{app.id}</td>
                 <td className="py-3 px-2">{app.name}</td>
-                <td className="py-3 px-2">₹{app.income?.toLocaleString()}</td>
-                <td className="py-3 px-2">₹{app.loan?.toLocaleString()}</td>
-                <td className="py-3 px-2">
-                  {(app.probability * 100).toFixed(1)}%
-                </td>
+                <td className="py-3 px-2">₹{app.income.toLocaleString()}</td>
+                <td className="py-3 px-2">{app.credit}</td>
+                <td className="py-3 px-2">₹{app.loan.toLocaleString()}</td>
+                <td className="py-3 px-2">{(app.score * 100).toFixed(1)}%</td>
+
                 <td
                   className="py-3 px-2 font-semibold"
                   style={{
@@ -69,6 +97,7 @@ function ApplicationsTable() {
                 >
                   {app.result}
                 </td>
+
                 <td className="py-3 px-2">{app.mode}</td>
                 <td className="py-3 px-2">{app.date}</td>
                 <td className="py-3 px-2">{app.confidence}</td>
