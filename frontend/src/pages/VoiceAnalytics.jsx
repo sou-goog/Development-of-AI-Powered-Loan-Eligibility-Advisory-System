@@ -1,7 +1,8 @@
 // src/pages/VoiceAnalytics.jsx
 import React, { useState } from "react";
 import AdminLayout from "../components/AdminLayout";
-XAxis,
+import {
+  XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
