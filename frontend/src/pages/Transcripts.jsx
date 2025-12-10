@@ -9,16 +9,17 @@ function Transcripts() {
   useEffect(() => {
     async function fetchTranscripts() {
       try {
-        const res = await fetch("/api/transcripts"); // <-- your backend endpoint
+        // Use backend port for API call
+        const res = await fetch("http://localhost:8000/api/transcripts");
         const data = await res.json();
-        setTranscripts(data);
+        setTranscripts(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Error fetching transcripts:", err);
+        setTranscripts([]); // fallback to empty array on error
       } finally {
         setLoading(false);
       }
     }
-
     fetchTranscripts();
   }, []);
 
@@ -41,7 +42,7 @@ function Transcripts() {
           </thead>
 
           <tbody>
-            {transcripts.map((t, index) => (
+            {(Array.isArray(transcripts) ? transcripts : []).map((t, index) => (
               <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/40">
                 <td className="py-3 px-2">{t.id}</td>
                 <td className="py-3 px-2 text-slate-200">{t.user}</td>
