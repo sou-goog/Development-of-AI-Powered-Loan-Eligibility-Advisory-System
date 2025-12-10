@@ -35,7 +35,6 @@ const Typewriter = ({ text }) => {
   const [displayedText, setDisplayedText] = useState("");
 
   useEffect(() => {
-    let index = 0;
     // If text was reset (empty), reset display immediately
     if (!text) {
       setDisplayedText("");
@@ -98,7 +97,6 @@ const VoiceAgentRealtime = () => {
   const currentSourceRef = useRef(null); // Track current audio source
   const currentAiTokenRef = useRef("");
   const messagesEndRef = useRef(null);
-  const modalScrollRef = useRef(null);
   const extractedDataRef = useRef({}); // Ref to access latest data in callbacks
 
   const navigate = useNavigate();
@@ -298,7 +296,7 @@ const VoiceAgentRealtime = () => {
           console.warn("Unknown message type:", type);
       }
     },
-    [queueAudioChunk, stopAudioPlayback]
+    [queueAudioChunk, stopAudioPlayback, navigate]
   );
 
   /**

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, CheckCircle, Loader, File, FileCode } from "lucide-react";
+import { Upload, FileText, CheckCircle, Loader } from "lucide-react";
 import { ocrAPI } from "../utils/api";
 import { toast } from "react-toastify";
 
@@ -102,8 +102,6 @@ const DocumentKYCGrid = ({ uploadedFiles = [], onUploadSuccess, onRemove }) => {
 
     const handleUpload = (file, data, type) => {
         // Attach docType to the file object before passing up
-        const fileWithMeta = { ...file, docType: type, name: file.name }; // Ensure properties
-
         // We pass the raw file object + data + docType
         // The parent expects (data, file) signature
         // We'll augment the file object

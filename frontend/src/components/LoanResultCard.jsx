@@ -147,7 +147,7 @@ const LoanResultCard = ({
       icon: CreditCard,
       label: "Credit Tier",
       value: result.credit_tier,
-      color: "text-secondary-600",
+      color: "text-gray-900",
     },
     {
       icon: Target,
