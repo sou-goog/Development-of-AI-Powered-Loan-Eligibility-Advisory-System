@@ -72,6 +72,12 @@ const LoanResultCard = ({
           bgColor: "bg-yellow-100",
           label: "Medium Risk",
         };
+      case "low_medium_risk":
+        return {
+          color: "text-blue-600",
+          bgColor: "bg-blue-100",
+          label: "Low-Medium Risk",
+        };
       case "high_risk":
         return {
           color: "text-red-600",
@@ -227,9 +233,8 @@ const LoanResultCard = ({
               >
                 <div className="flex items-center space-x-3 mb-2">
                   <div
-                    className={`p-2 rounded-lg ${
-                      metric.bgColor || "bg-gray-100"
-                    }`}
+                    className={`p-2 rounded-lg ${metric.bgColor || "bg-gray-100"
+                      }`}
                   >
                     <metric.icon className={`w-4 h-4 ${metric.color}`} />
                   </div>
@@ -290,7 +295,7 @@ const LoanResultCard = ({
                       e?.response?.data ||
                       e?.message ||
                       msg;
-                  } catch (__) {}
+                  } catch (__) { }
                   setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
@@ -326,9 +331,8 @@ const LoanResultCard = ({
                   } else {
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `loan_report_${applicationId}${
-                      contentType.includes("pdf") ? ".pdf" : ""
-                    }`;
+                    a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""
+                      }`;
                     a.click();
                     a.remove();
                   }

@@ -23,10 +23,48 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Phone, PhoneOff, X } from "lucide-react";
-import FileUpload from "./FileUpload";
+import DocumentKYCGrid from "./DocumentKYCGrid";
 import LoanResultCard from "./LoanResultCard";
 import { toast } from "react-toastify";
+
+
+// Helper Component for Smooth Typing Effect
+const Typewriter = ({ text }) => {
+  const [displayedText, setDisplayedText] = useState("");
+
+  useEffect(() => {
+    let index = 0;
+    // If text was reset (empty), reset display immediately
+    if (!text) {
+      setDisplayedText("");
+      return;
+    }
+
+    // If we're already fully displayed, check if text grew (streaming)
+    // If text shrunk (shouldn't happen usually unless reset), reset.
+    if (displayedText.length > text.length) {
+      setDisplayedText(text); // snap to new text if it's completely different
+      return;
+    }
+
+    // Interval to "type" catch up
+    const intervalId = setInterval(() => {
+      setDisplayedText((prev) => {
+        if (prev.length < text.length) {
+          return text.slice(0, prev.length + 1); // Reveal one more char
+        }
+        clearInterval(intervalId);
+        return prev;
+      });
+    }, 15); // 15ms per char = ~66 chars/sec (Smooth & Fast)
+
+    return () => clearInterval(intervalId);
+  }, [text, displayedText]); // Re-run when target text changes
+
+  return <p className="whitespace-pre-wrap text-sm">{displayedText}</p>;
+};
 
 const VoiceAgentRealtime = () => {
   // Connection state
@@ -61,6 +99,14 @@ const VoiceAgentRealtime = () => {
   const currentAiTokenRef = useRef("");
   const messagesEndRef = useRef(null);
   const modalScrollRef = useRef(null);
+  const extractedDataRef = useRef({}); // Ref to access latest data in callbacks
+
+  const navigate = useNavigate();
+
+  // Sync ref with state
+  useEffect(() => {
+    extractedDataRef.current = extractedData;
+  }, [extractedData]);
 
 
   /**
@@ -156,13 +202,16 @@ const VoiceAgentRealtime = () => {
         case "partial_transcript":
           stopAudioPlayback();
           if (currentAiTokenRef.current) {
-            setFinalTranscripts((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                text: currentAiTokenRef.current.split("|||JSON|||")[0],
-              },
-            ]);
+            const cleanText = currentAiTokenRef.current.split("|||")[0];
+            if (cleanText.trim()) {
+              setFinalTranscripts((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  text: cleanText,
+                },
+              ]);
+            }
             currentAiTokenRef.current = "";
             setCurrentAiToken("");
           }
@@ -172,13 +221,16 @@ const VoiceAgentRealtime = () => {
         case "final_transcript":
           stopAudioPlayback();
           if (currentAiTokenRef.current) {
-            setFinalTranscripts((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                text: currentAiTokenRef.current.split("|||JSON|||")[0],
-              },
-            ]);
+            const cleanText = currentAiTokenRef.current.split("|||")[0];
+            if (cleanText.trim()) {
+              setFinalTranscripts((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  text: cleanText,
+                },
+              ]);
+            }
             currentAiTokenRef.current = "";
             setCurrentAiToken("");
           }
@@ -198,7 +250,7 @@ const VoiceAgentRealtime = () => {
 
         case "ai_token":
           currentAiTokenRef.current += data;
-          setCurrentAiToken(currentAiTokenRef.current.split("|||JSON|||")[0]);
+          setCurrentAiToken(currentAiTokenRef.current.split("|||")[0]);
           break;
 
         case "audio_chunk":
@@ -211,11 +263,25 @@ const VoiceAgentRealtime = () => {
 
         case "eligibility_result":
           setEligibilityResult(data);
+          // Navigate to Result Page
+          navigate("/eligibility-result", {
+            state: {
+              result: data,
+              applicationId: data.application_id,
+              extractedData: extractedDataRef.current
+            }
+          });
           break;
 
         case "document_verification_required":
-          setShowDocumentUpload(true);
-          setExtractedData(data.structured_data);
+          // NEW: Redirect to Verification Page directly
+          if (data.application_id) {
+            navigate(`/verify?applicationId=${data.application_id}`);
+          } else {
+            // Fallback if no ID (shouldn't happen with new backend)
+            setShowDocumentUpload(true);
+            setExtractedData(data.structured_data);
+          }
           if (data.message) {
             setFinalTranscripts((prev) => [
               ...prev,
@@ -484,7 +550,7 @@ const VoiceAgentRealtime = () => {
         {currentAiToken && (
           <div className="flex justify-start">
             <div className="max-w-[80%] px-4 py-2 rounded-2xl rounded-bl-none bg-white text-gray-800 border border-gray-100 shadow-sm">
-              <p className="whitespace-pre-wrap text-sm">{currentAiToken}</p>
+              <Typewriter text={currentAiToken} />
             </div>
           </div>
         )}
@@ -592,23 +658,22 @@ const VoiceAgentRealtime = () => {
 
       {/* Document Upload Modal */}
       {showDocumentUpload && (
-        <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md h-auto max-h-[85%] overflow-hidden flex flex-col border border-gray-200">
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="font-semibold text-gray-800">Verify Identity</h3>
-              <button
-                onClick={() => setShowDocumentUpload(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div ref={modalScrollRef} className="flex-1 p-4 overflow-y-auto">
-              <FileUpload
-                applicationId={eligibilityResult?.application_id || null}
-                previousUploads={uploadedFiles}
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative bg-slate-950 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-800 overflow-hidden">
+
+            {/* Close Button (Absolute Top Right) */}
+            <button
+              onClick={() => setShowDocumentUpload(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white z-10 p-2 bg-slate-900/50 rounded-full hover:bg-slate-800 transition-colors"
+            >
+              <X size={24} />
+            </button>
+
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <DocumentKYCGrid
+                uploadedFiles={uploadedFiles}
                 onUploadSuccess={(data, file) => {
-                  toast.success("Verification Complete!");
+                  toast.success(`${file.name} Verified!`);
                   setUploadedFiles((prev) => [
                     ...prev,
                     {
@@ -616,29 +681,36 @@ const VoiceAgentRealtime = () => {
                       size: file.size,
                       type: file.type,
                       data: data,
+                      docType: file.docType // store the docType
                     },
                   ]);
 
-                  if (modalScrollRef.current) {
-                    modalScrollRef.current.scrollTop = 0;
-                  }
-
+                  // Send to backend
                   if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(
-                      JSON.stringify({ type: "document_uploaded", data: data })
+                      JSON.stringify({ type: "document_uploaded", data: data, docType: file.docType })
                     );
                   }
                 }}
+                onRemove={(fileToRemove) => {
+                  setUploadedFiles((prev) =>
+                    prev.filter((f) => f.name !== fileToRemove.name)
+                  );
+                }}
               />
             </div>
-            {/* Footer for multiple uploads */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col items-center">
-              <p className="text-xs text-gray-500 mb-3 text-center">
-                To upload another document, remove the current one using the 'X'
-                button above.
+
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-800 bg-slate-900 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0">
+              <p className="text-slate-400 text-sm">
+                Ensure all documents are clear and legible before finishing.
               </p>
               <button
                 onClick={() => {
+                  if (uploadedFiles.length < 5) {
+                    toast.warning("Please upload all 5 documents (Aadhaar, PAN, KYC, Bank Statement, Salary Slip) to proceed.");
+                    return;
+                  }
                   setShowDocumentUpload(false);
                   if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(
@@ -646,7 +718,10 @@ const VoiceAgentRealtime = () => {
                     );
                   }
                 }}
-                className="w-full py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
+                className={`w-full md:w-auto px-8 py-3 rounded-xl font-semibold shadow-lg transition-all transform active:scale-95 ${uploadedFiles.length < 5
+                  ? "bg-slate-700 text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20"
+                  }`}
               >
                 Done / Finish Verification
               </button>

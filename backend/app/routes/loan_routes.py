@@ -461,34 +461,34 @@ async def predict_for_application(
 
         # Prepare data with all 23 features
         applicant_data = {
-            # Direct input features
-            "Age": app.age,
-            "Gender": app.gender,
-            "Marital_Status": app.marital_status,
-            "Monthly_Income": app.monthly_income,
-            "Employment_Type": app.employment_type,
-            "Loan_Amount_Requested": app.loan_amount_requested,
-            "Loan_Tenure_Years": app.loan_tenure_years,
-            "Credit_Score": app.credit_score,
-            "Region": app.region,
-            "Loan_Purpose": app.loan_purpose,
-            "Dependents": app.dependents,
-            "Existing_EMI": app.existing_emi,
-            "Salary_Credit_Frequency": app.salary_credit_frequency,
+            # Direct input features (With Defaults for Voice-Initiated Apps)
+            "Age": app.age or 30,
+            "Gender": app.gender or "Male",
+            "Marital_Status": app.marital_status or "Single",
+            "Monthly_Income": app.monthly_income or 0,
+            "Employment_Type": app.employment_type or "Salaried",
+            "Loan_Amount_Requested": app.loan_amount_requested or 0,
+            "Loan_Tenure_Years": app.loan_tenure_years or 5,
+            "Credit_Score": app.credit_score or 650,
+            "Region": app.region or "North",
+            "Loan_Purpose": app.loan_purpose or "Personal",
+            "Dependents": app.dependents or 0,
+            "Existing_EMI": app.existing_emi or 0,
+            "Salary_Credit_Frequency": app.salary_credit_frequency or "Monthly",
 
             # OCR extracted features
-            "Total_Withdrawals": app.total_withdrawals,
-            "Total_Deposits": app.total_deposits,
-            "Avg_Balance": app.avg_balance,
-            "Bounced_Transactions": app.bounced_transactions,
-            "Account_Age_Months": app.account_age_months,
+            "Total_Withdrawals": app.total_withdrawals or 0,
+            "Total_Deposits": app.total_deposits or 0,
+            "Avg_Balance": app.avg_balance or 0,
+            "Bounced_Transactions": app.bounced_transactions or 0,
+            "Account_Age_Months": app.account_age_months or 0,
 
             # Calculated features
-            "Total_Liabilities": app.total_liabilities,
-            "Debt_to_Income_Ratio": app.debt_to_income_ratio,
-            "Income_Stability_Score": app.income_stability_score,
-            "Credit_Utilization_Ratio": app.credit_utilization_ratio,
-            "Loan_to_Value_Ratio": app.loan_to_value_ratio,
+            "Total_Liabilities": app.total_liabilities or 0,
+            "Debt_to_Income_Ratio": app.debt_to_income_ratio or 0,
+            "Income_Stability_Score": app.income_stability_score or 0.8,
+            "Credit_Utilization_Ratio": app.credit_utilization_ratio or 0.3,
+            "Loan_to_Value_Ratio": app.loan_to_value_ratio or 0.7,
             
             # Verification features
             "Bank_Verified": int(app.document_verified) if app.document_verified else 0,

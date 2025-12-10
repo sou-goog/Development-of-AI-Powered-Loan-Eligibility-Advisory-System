@@ -12,7 +12,7 @@ import {
   Loader,
 } from "lucide-react";
 
-const FileUpload = ({ onUploadSuccess, applicationId, footer, previousUploads = [] }) => {
+const FileUpload = ({ onUploadSuccess, applicationId, footer, previousUploads = [], onRemove }) => {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -442,7 +442,7 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer, previousUploads = 
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Upload History</p>
           <div className="space-y-2">
             {previousUploads.map((file, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg group">
                 <div className="flex items-center space-x-3 overflow-hidden">
                   <div className="bg-white p-1 rounded-md border border-gray-100">
                     <CheckCircle className="w-5 h-5 text-green-600" />
@@ -452,6 +452,15 @@ const FileUpload = ({ onUploadSuccess, applicationId, footer, previousUploads = 
                     <p className="text-xs text-blue-600">Verified</p>
                   </div>
                 </div>
+                {onRemove && (
+                  <button
+                    onClick={() => onRemove(file)}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
+                    title="Remove file"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
