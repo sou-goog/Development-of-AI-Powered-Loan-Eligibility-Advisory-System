@@ -22,6 +22,7 @@ function LoanRejectionDashboard() {
     { label: "Allowed EMI Limit", value: "₹10,000" },
   ];
 
+<<<<<<< HEAD
   const suggestions = [
     "Pay bills on time for 6 months.",
     "Keep credit card usage below 30%.",
@@ -32,6 +33,40 @@ function LoanRejectionDashboard() {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     alert("Sharable link copied!");
+=======
+  const handleShareDashboard = async () => {
+    setShareLoading(true);
+    setShareError("");
+    try {
+      // Use userId or application.user_id for sharing (adjust as needed)
+      const user_id = application?.user_id || userId;
+      if (!user_id) throw new Error("User ID not found");
+      const res = await loanAPI.shareDashboard(user_id);
+      setShareLink(res.data.link);
+      navigator.clipboard.writeText(res.data.link);
+      // Save the full public dashboard link and token to localStorage for manager dashboard
+      window.localStorage.setItem("publicDashboardLink", res.data.link);
+      try {
+        const url = new URL(res.data.link);
+        const parts = url.pathname.split("/");
+        const token = parts[parts.length - 1];
+        if (token) {
+          window.localStorage.setItem("publicDashboardToken", token);
+        }
+      } catch (e) {
+        // fallback: try to get token from string
+        const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
+        if (match && match[1]) {
+          window.localStorage.setItem("publicDashboardToken", match[1]);
+        }
+      }
+      alert("Sharable dashboard link copied!");
+    } catch (err) {
+      setShareError("Failed to generate share link");
+    } finally {
+      setShareLoading(false);
+    }
+>>>>>>> backup/safe-branch
   };
 
   return (
@@ -79,51 +114,38 @@ function LoanRejectionDashboard() {
         <p className="text-sm text-slate-300 mt-2">{detailedReason}</p>
       </div>
 
-      {/* Metrics */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-        <p className="text-sm font-semibold mb-3">Eligibility Snapshot</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {metrics.map((m, index) => (
-            <div
-              key={index}
-              className="bg-slate-900/60 border border-slate-700 rounded-lg p-3"
-            >
-              <p className="text-xs text-slate-400">{m.label}</p>
-              <p className="text-base font-semibold text-white mt-1">
-                {m.value}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Suggestions */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
-        <p className="text-sm font-semibold mb-2">How to Improve</p>
-        <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
-          {suggestions.map((s, index) => (
-            <li key={index}>{s}</li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Sharable Link */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold mb-1">Sharable Link</p>
-          <p className="text-xs text-slate-400">
-            Share this link with the user to view their rejection dashboard.
-          </p>
-        </div>
-
-        <button
-          onClick={handleCopyLink}
-          className="bg-blue-500 hover:bg-blue-600 text-white text-sm px-4 py-2 rounded-lg"
-        >
-          Copy Link
-        </button>
-      </div>
-    </AdminLayout>
+        const handleShareDashboard = async () => {
+          setShareLoading(true);
+          setShareError("");
+          try {
+            // Use userId or application.user_id for sharing (adjust as needed)
+            const user_id = application?.user_id || userId;
+            if (!user_id) throw new Error("User ID not found");
+            const res = await loanAPI.shareDashboard(user_id);
+            setShareLink(res.data.link);
+            navigator.clipboard.writeText(res.data.link);
+            // Save the full public dashboard link and token to localStorage for manager dashboard
+            window.localStorage.setItem("publicDashboardLink", res.data.link);
+            try {
+              const url = new URL(res.data.link);
+              const parts = url.pathname.split("/");
+              const token = parts[parts.length - 1];
+              if (token) {
+                window.localStorage.setItem("publicDashboardToken", token);
+              }
+            } catch (e) {
+              // fallback: try to get token from string
+              const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
+              if (match && match[1]) {
+                window.localStorage.setItem("publicDashboardToken", match[1]);
+              }
+            }
+          } catch (err) {
+            setShareError(err.message || "Error sharing dashboard");
+          } finally {
+            setShareLoading(false);
+          }
+        };
   );
 }
 
