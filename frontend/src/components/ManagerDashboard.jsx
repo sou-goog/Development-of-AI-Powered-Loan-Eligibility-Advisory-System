@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+// import { Dialog } from '@headlessui/react';
+// Use Dialog.Title as <Dialog.Panel> and <Dialog.Title> inside Dialog
+import { toast } from "react-toastify";
 import {
   Users,
   DollarSign,
@@ -16,30 +19,17 @@ import MiniChatbot from "./MiniChatbot";
 import ManagerNotifications from "./ManagerNotifications";
 import { motion, AnimatePresence } from "framer-motion";
 import { managerAPI } from "../utils/api";
-import { toast } from "react-toastify";
-
-/**
- * ManagerDashboard - Connected to Real API
- */
+import { auth } from "../utils/auth";
 
 export default function ManagerDashboard() {
-  /**
-   * ManagerDashboard - Material-inspired redesign
-   *
-   * Replace the placeholder fetch/post functions with your real API calls.
-   */
-
   // ---- state ----
   const [applications, setApplications] = useState([]); // raw
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
   const [selectedApp, setSelectedApp] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState(null); // null | 'pending' | 'approved' | 'rejected'
   const [stats, setStats] = useState(null);
-
-  // Notification state
   const [notifModal, setNotifModal] = useState(null);
   const [, setNotifCount] = useState(0);
 
@@ -180,30 +170,26 @@ export default function ManagerDashboard() {
     [applications]
   );
 
-  // handleDownloadReport is currently not used but kept for future implementation
-  // const handleDownloadReport = useCallback(async (id) => {
-  //   try {
-  //     const res = await reportAPI.downloadReport(id);
-  //     // Create blob link to download
-  //     const url = window.URL.createObjectURL(new Blob([res.data]));
-  //     const link = document.createElement("a");
-  //     link.href = url;
-  //     link.setAttribute("download", `loan_report_${id}.pdf`);
-  //     document.body.appendChild(link);
-  //     link.click();
-  //     link.remove();
-  //   } catch (err) {
-  //     console.error(err);
-  //     toast.error("Failed to download report. It might not be generated yet.");
-  //   }
-  // }, []);
-
-  const handleViewDashboard = useCallback(
-    (id) => {
-      openDetails(id);
-    },
-    [openDetails]
-  );
+  // ---- navigation ----
+  const handleViewDashboard = async () => {
+    try {
+      const user = window.auth?.getUser ? window.auth.getUser() : (typeof auth !== 'undefined' ? auth.getUser() : null);
+      const userId = user?.id;
+      if (!userId) {
+        toast.error("User ID not found. Please log in again.");
+        return;
+      }
+      const res = await managerAPI.shareDashboard(userId);
+      const token = res?.data?.token;
+      if (token) {
+        window.open(`/public-dashboard/${token}`, "_blank");
+      } else {
+        toast.error("Could not retrieve dashboard link.");
+      }
+    } catch (err) {
+      toast.error("Failed to get dashboard link.");
+    }
+  };
 
   // ---- small helpers ----
   const niceCurrency = (val) => {
@@ -215,100 +201,56 @@ export default function ManagerDashboard() {
 
   // ---- render ----
   return (
-    <div className="w-full min-h-screen bg-gray-50">
-      {/* Notification Modal */}
+    <div className="min-h-screen bg-gray-100">
+      {/* Notifications Modal - Moved here for correct context */}
       <AnimatePresence>
         {notifModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.96 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.96 }}
-              className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ minWidth: "320px" }}
+              className="bg-white w-full max-w-md rounded-lg shadow-lg overflow-hidden"
             >
-              <div className="px-6 py-4 bg-gradient-to-r from-blue-700 to-blue-500 text-white flex items-center justify-between sticky top-0 z-10">
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {notifModal.type === "new_application"
-                      ? "New Loan Application"
-                      : notifModal.type === "application_documents_verified"
-                      ? "Documents Verified"
-                      : "Application Update"}
-                  </h3>
-                  <p className="text-sm opacity-90">Applicant Details</p>
+              <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-secondary-600 text-white">
+                <h3 className="text-lg font-semibold">
+                  New Application Notification
+                </h3>
+              </div>
+
+              <div className="px-6 py-4">
+                <div className="text-sm text-gray-500 mb-4">
+                  You have received a new loan application. Review and take action
+                  now.
                 </div>
-                <button
-                  onClick={() => setNotifModal(null)}
-                  className="p-2 rounded-full hover:bg-white/10"
-                  aria-label="Close"
-                >
-                  <XCircle className="w-6 h-6 text-white" />
-                </button>
-              </div>
-              <div className="p-6 space-y-4">
-                <ContactField
-                  icon={Users}
-                  label="Name"
-                  value={notifModal.full_name}
-                />
-                <ContactField
-                  icon={Mail}
-                  label="Email"
-                  value={notifModal.email}
-                />
-                <ContactField
-                  icon={DollarSign}
-                  label="Loan Amount"
-                  value={`$${niceCurrency(notifModal.loan_amount)}`}
-                />
-                <ContactField
-                  icon={FileText}
-                  label="Application ID"
-                  value={notifModal.application_id}
-                />
-                <ContactField
-                  icon={FileText}
-                  label="Created At"
-                  value={
-                    notifModal.created_at
-                      ? new Date(notifModal.created_at).toLocaleString()
-                      : "N/A"
-                  }
-                />
-                {notifModal.message && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-sm text-blue-800">
-                      {notifModal.message}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="px-6 py-3 bg-gray-50 border-t flex gap-2">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    openDetails(notifModal.application_id);
-                    setNotifModal(null);
-                  }}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                >
-                  View Details
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setNotifModal(null)}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
-                >
-                  Close
-                </motion.button>
+
+                {/* Action buttons */}
+                <div className="flex gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      openDetails(notifModal.application_id);
+                      setNotifModal(null);
+                    }}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    View Details
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setNotifModal(null)}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
+                  >
+                    Close
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -591,7 +533,7 @@ export default function ManagerDashboard() {
                           )}
 
                           <button
-                            onClick={() => handleViewDashboard(app.id)}
+                            onClick={handleViewDashboard}
                             className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm hover:bg-primary-700"
                           >
                             <BarChart3 className="w-4 h-4 inline-block mr-1" />

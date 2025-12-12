@@ -151,30 +151,31 @@ class ChatSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+
 class VoiceCall(Base):
     """Voice call conversation and extraction records (stored in Supabase/Postgres via SQLAlchemy)."""
     __tablename__ = "voice_calls"
-
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Raw conversation
     user_text = Column(Text, nullable=True)
     ai_reply = Column(Text, nullable=True)
-
-    # Extracted fields (flattened for easy querying)
     name = Column(String, nullable=True)
     monthly_income = Column(Float, nullable=True)
     credit_score = Column(Integer, nullable=True)
     loan_amount = Column(Float, nullable=True)
-
-    # Storage / artifacts
-    audio_url = Column(String, nullable=True)  # Path under /static/voices
+    audio_url = Column(String, nullable=True)
     structured_data = Column(JSON, nullable=True)
-
-    # Downstream inference results
     eligibility_score = Column(Float, nullable=True)
 
+# SharedDashboardLink must be a top-level class
+class SharedDashboardLink(Base):
+    """Persistent store for shared dashboard links"""
+    __tablename__ = "shared_dashboard_links"
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, index=True)
+    user_id = Column(Integer, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
 
 # Create tables (works for SQLite and Postgres/Supabase)
 Base.metadata.create_all(bind=engine)

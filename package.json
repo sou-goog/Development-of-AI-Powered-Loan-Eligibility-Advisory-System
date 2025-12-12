@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
     "react-feather": "^2.0.10",
     "recharts": "^3.5.1"
   }

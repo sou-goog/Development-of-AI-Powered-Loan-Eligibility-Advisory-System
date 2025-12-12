@@ -233,8 +233,9 @@ const LoanResultCard = ({
               >
                 <div className="flex items-center space-x-3 mb-2">
                   <div
-                    className={`p-2 rounded-lg ${metric.bgColor || "bg-gray-100"
-                      }`}
+                    className={`p-2 rounded-lg ${
+                      metric.bgColor || "bg-gray-100"
+                    }`}
                   >
                     <metric.icon className={`w-4 h-4 ${metric.color}`} />
                   </div>
@@ -295,7 +296,7 @@ const LoanResultCard = ({
                       e?.response?.data ||
                       e?.message ||
                       msg;
-                  } catch (__) { }
+                  } catch (__) {}
                   setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
@@ -311,47 +312,57 @@ const LoanResultCard = ({
               {loadingExplain ? "Generating analysis..." : "Explain with AI"}
             </button>
 
-            <button
-              disabled={!applicationId || reportLoading}
-              onClick={async () => {
-                if (!applicationId) return;
-                setReportLoading(true);
-                try {
-                  // Ensure report exists
-                  await reportAPI.generateReport(applicationId);
-                  // Then trigger download
-                  const res = await reportAPI.downloadReport(applicationId);
-                  const contentType =
-                    res.headers?.["content-type"] || "application/pdf";
-                  const blob = new Blob([res.data], { type: contentType });
-                  const url = window.URL.createObjectURL(blob);
-                  // If the server returned HTML (fallback), open in new tab so browser can render it.
-                  if (contentType.includes("html")) {
-                    window.open(url, "_blank");
-                  } else {
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""
+            <div className="flex gap-3">
+              <button
+                disabled={!applicationId || reportLoading}
+                onClick={async () => {
+                  if (!applicationId) return;
+                  setReportLoading(true);
+                  try {
+                    // Ensure report exists
+                    await reportAPI.generateReport(applicationId);
+                    // Then trigger download
+                    const res = await reportAPI.downloadReport(applicationId);
+                    const contentType =
+                      res.headers?.["content-type"] || "application/pdf";
+                    const blob = new Blob([res.data], { type: contentType });
+                    const url = window.URL.createObjectURL(blob);
+                    // If the server returned HTML (fallback), open in new tab so browser can render it.
+                    if (contentType.includes("html")) {
+                      window.open(url, "_blank");
+                    } else {
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `loan_report_${applicationId}${
+                        contentType.includes("pdf") ? ".pdf" : ""
                       }`;
-                    a.click();
-                    a.remove();
+                      a.click();
+                      a.remove();
+                    }
+                    window.URL.revokeObjectURL(url);
+                  } catch (e) {
+                    // optional: toast
+                  } finally {
+                    setReportLoading(false);
                   }
-                  window.URL.revokeObjectURL(url);
-                } catch (e) {
-                  // optional: toast
-                } finally {
-                  setReportLoading(false);
+                }}
+                className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
+                title={
+                  !applicationId
+                    ? "Report requires an application ID"
+                    : "Download PDF report"
                 }
-              }}
-              className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
-              title={
-                !applicationId
-                  ? "Report requires an application ID"
-                  : "Download PDF report"
-              }
-            >
-              {reportLoading ? "Preparing report..." : "Download PDF Report"}
-            </button>
+              >
+                {reportLoading ? "Preparing report..." : "Download PDF Report"}
+              </button>
+              <button
+                onClick={() => (window.location.href = "/admin/dashboard")}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                title="Go to Dashboard"
+              >
+                Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -489,12 +500,12 @@ const LoanResultCard = ({
         {(analysis || analysisError) && (
           <div className="card mb-6 text-left max-h-[35vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-lg font-semibold text-primary-600">
-                AI Analysis
+              <h4 className="text-lg font-semibold text-gray-900">
+                <span className="text-green-300">AI Analysis</span>
               </h4>
               {analysisError && (
                 <button
-                  className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                  className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-900"
                   onClick={async () => {
                     if (!applicationId) return;
                     setLoadingExplain(true);
@@ -518,8 +529,8 @@ const LoanResultCard = ({
               )}
             </div>
             {analysis && (
-              <div className="mt-4 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                <div className="prose prose-sm max-w-none text-gray-700 prose-headings:font-semibold prose-headings:text-indigo-900 prose-p:text-gray-700 prose-strong:text-indigo-700 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1">
+              <div className="mt-4 p-4 bg-gray-100 rounded-xl border border-gray-300">
+                <div className="prose prose-sm max-w-none text-gray-900 prose-headings:font-semibold prose-headings:text-gray-900 prose-p:text-gray-900 prose-strong:text-gray-900 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1">
                   <ReactMarkdown>{analysis}</ReactMarkdown>
                 </div>
               </div>

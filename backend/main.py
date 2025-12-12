@@ -40,8 +40,9 @@ if not os.getenv("VOSK_MODEL_PATH"):
         os.environ["VOSK_MODEL_PATH"] = str(default_vosk)
 
 # Import routes
-from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes, notification_routes
+from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes, notification_routes, user_notification_routes
 from app.routes import voice_health
+from app.routes import transcripts_routes
 from app.models.database import Base, engine, DB_FALLBACK_USED
 
 @asynccontextmanager
@@ -111,10 +112,10 @@ static_dir = Path(__file__).parent / "app" / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Include route blueprints
-app.include_router(auth_routes.router, prefix="/api/auth", tags=["Authentication"])
-app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
-app.include_router(voice_routes.router, prefix="/api/voice", tags=["Voice"])
+# Register routes
+app.include_router(auth_routes.router, prefix="/api/auth")
+app.include_router(chat_routes.router, prefix="/api/chat")
+app.include_router(voice_routes.router, prefix="/api/voice")
 # app.include_router(voice_realtime.router)
 app.include_router(voice_realtime_v2.router, prefix="/api", tags=["Voice Agent - Real-time Streaming"])
 app.include_router(voice_health.router, prefix="/api/voice", tags=["Voice Health"])
@@ -124,6 +125,8 @@ app.include_router(report_routes.router, prefix="/api/report", tags=["Reports"])
 app.include_router(manager_routes.router, prefix="/api/manager", tags=["Manager Dashboard"])
 app.include_router(otp_routes.router, prefix="/api/otp", tags=["OTP Verification"])
 app.include_router(notification_routes.router)
+app.include_router(user_notification_routes.router)
+app.include_router(transcripts_routes.router, prefix="/api", tags=["Transcripts"])
 
 # Root endpoint
 @app.get("/", tags=["Root"])

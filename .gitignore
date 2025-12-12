@@ -118,6 +118,17 @@ backend/app/static/voices/*
 backend/app/static/reports/*
 backend/logs/*
 
+# Local runtime files
+backend_pid.txt
+
+# Local env and macOS metadata
+.DS_Store
+
+# Temporary/test artifacts
+test_audio.wav
+weasy_test.pdf
+
+
 # Node modules
 frontend/node_modules/
 frontend/build/

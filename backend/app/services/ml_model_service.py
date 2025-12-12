@@ -85,12 +85,17 @@ class MLModelService:
     def _load_models(self):
         """Load all trained models and preprocessing objects from pickle files."""
         model_dir = self._resolve_model_dir()
+        # Expose resolved model directory for diagnostics
+        self.model_dir = model_dir
 
         model_files = {
             "xgboost": "loan_xgboost_model.pkl",
             "decision_tree": "loan_decision_tree_model.pkl",
             "random_forest": "loan_random_forest_model.pkl",
         }
+        # Track per-file load errors for diagnostics
+        self.load_errors = {}
+
         for key, fname in model_files.items():
             path = model_dir / fname
             if path.exists():
@@ -100,8 +105,20 @@ class MLModelService:
                     logger.info(f"{key} model loaded from {path}")
                 except Exception as e:
                     logger.warning(f"Failed to load {key} model: {e}")
+                    # Record full exception string for diagnostics
+                    try:
+                        import traceback
+                        self.load_errors[key] = traceback.format_exc()
+                    except Exception:
+                        self.load_errors[key] = str(e)
             else:
                 logger.warning(f"Model file {fname} not found in {model_dir}")
+
+        # Expose which files exist for debugging
+        try:
+            self.available_artifacts = {p.name: p.exists() for p in model_dir.iterdir()}
+        except Exception:
+            self.available_artifacts = {}
 
         # Load feature columns
         xcols_path = model_dir / "X_columns.pkl"
@@ -165,6 +182,17 @@ class MLModelService:
             logger.warning("Label encoders not found, initializing new encoders")
             for feature in self.categorical_features:
                 self.label_encoders[feature] = LabelEncoder()
+
+    def get_status(self) -> Dict:
+        """Return diagnostic information about model loading for debugging."""
+        return {
+            "model_dir": str(getattr(self, "model_dir", "<unknown>")),
+            "available_artifacts": getattr(self, "available_artifacts", {}),
+            "loaded_models": list(self.models.keys()),
+            "x_columns_loaded": bool(self.x_columns),
+            "model_accuracies_present": bool(self.model_accuracies),
+            "load_errors": getattr(self, "load_errors", {}),
+        }
     
     def predict_eligibility(self, applicant_data: Dict) -> Dict:
         """
@@ -235,6 +263,8 @@ class MLModelService:
 
                     pred_proba = self.models['xgboost'].predict_proba(X)
                     eligibility_score = float(pred_proba[0][1])
+                    # Cap at 95% for realistic scoring (no perfect 100% scores)
+                    eligibility_score = min(eligibility_score, 0.95)
                     logger.info(f"DEBUG: Raw model output: {pred_proba}, Eligibility score: {eligibility_score}")
                     xgb_score = eligibility_score
                     model_results = {'xgboost': eligibility_score}
@@ -250,6 +280,8 @@ class MLModelService:
                         features_df[self.categorical_features].values
                     ])
                     eligibility_score = float(self.models['xgboost'].predict_proba(features_processed)[0][1])
+                    # Cap at 95% for realistic scoring
+                    eligibility_score = min(eligibility_score, 0.95)
                     xgb_score = eligibility_score
                     model_results = {'xgboost': eligibility_score}
             else:

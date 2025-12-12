@@ -11,7 +11,7 @@ from datetime import datetime
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    full_name: str
+    full_name: Optional[str] = None
     role: str = "applicant"
 
 
@@ -23,7 +23,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
-    full_name: str
+    full_name: Optional[str] = None
     role: str
     created_at: datetime
     email_verified: bool
@@ -41,7 +41,7 @@ class TokenResponse(BaseModel):
 # Loan Application Schemas
 class LoanApplicationCreate(BaseModel):
     user_id: Optional[int] = None
-    full_name: str
+    full_name: Optional[str] = None
     email: EmailStr
     phone: str
     annual_income: float
@@ -86,7 +86,7 @@ class LoanApplicationUpdate(BaseModel):
 class LoanApplicationResponse(BaseModel):
     id: int
     user_id: int
-    full_name: str
+    full_name: Optional[str] = None
     email: str
     annual_income: float
     credit_score: int
@@ -219,11 +219,14 @@ class ApplicationStats(BaseModel):
     pending_applications: int
     approved_applications: int
     rejected_applications: int
+    voice_calls_count: Optional[int] = 0
+    avg_credit_score: Optional[float] = 0.0
+    loan_amount_distribution: Optional[List[Dict[str, Any]]] = None
 
 
 class ManagerApplicationResponse(BaseModel):
     id: int
-    full_name: str
+    full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     annual_income: Optional[float] = None
