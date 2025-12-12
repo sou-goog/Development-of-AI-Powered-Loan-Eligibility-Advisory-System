@@ -61,6 +61,42 @@ async def get_last_application(request: Request, db: Session = Depends(get_db)):
     return app
 
 
+@router.get("/rejection/{user_id}")
+async def get_rejection_details(user_id: int, db: Session = Depends(get_db)):
+    """
+    Get the latest rejected application for a specific user.
+    """
+    app = (
+        db.query(LoanApplication)
+        .filter(LoanApplication.user_id == user_id, LoanApplication.approval_status == "rejected")
+        .order_by(LoanApplication.created_at.desc())
+        .first()
+    )
+    
+    if not app:
+        raise HTTPException(status_code=404, detail="No rejected application found for this user")
+        
+    return {
+        "applicant_name": app.full_name,
+        "application_id": f"APP-{app.id}",
+        "loan_amount": f"₹{app.loan_amount_requested:,.2f}",
+        "loan_type": app.loan_purpose or "Personal Loan",
+        "rejection_reason": app.manager_notes or "Eligibility criteria not met",
+        "detailed_reason": "Your application did not meet the required eligibility score or credit criteria.",
+        "metrics": [
+            {"label": "Your Credit Score", "value": f"{app.credit_score} / 900"},
+            {"label": "Required Score", "value": "700 / 900"},
+            {"label": "Monthly Income", "value": f"₹{app.monthly_income:,.2f}"},
+            {"label": "Required Income", "value": "₹35,000"}, # Example threshold
+        ],
+        "suggestions": [
+            "Improve your credit score by paying bills on time.",
+            "Reduce existing liabilities before re-applying.",
+            "Ensure a stable monthly income."
+        ]
+    }
+
+
 # ================
 # NEW — missing GET for single application
 # ================
@@ -273,14 +309,14 @@ async def verify_application_document(
             from app.routes.notification_routes import send_manager_notification
             notification = {
                 "type": "application_documents_verified",
-                "application_id": db_application.id,
+                "application_id": app.id,
                 "full_name": app.full_name,
                 "email": app.email,
                 "loan_amount": app.loan_amount_requested,
                 "created_at": app.created_at.isoformat() if app.created_at else datetime.utcnow().isoformat(),
                 "message": f"Documents verified for {app.full_name}"
             }
-            # Use background task for notification
+            # Use background task for manager notification
             background_tasks.add_task(send_manager_notification, notification)
             logger.info(f"Notification queued for document verification of application {application_id}")
         except Exception as notify_err:
@@ -303,6 +339,7 @@ async def verify_application_document(
 async def update_application(
     application_id: int,
     update_data: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -331,18 +368,15 @@ async def update_application(
         new_status = getattr(app, "approval_status", None)
         try:
             from app.routes.user_notification_routes import send_user_notification
-            import asyncio
             if prev_status != "accepted" and new_status == "accepted":
                 notification = {
                     "type": "application_accepted",
                     "application_id": application_id,
-                    "message": "Your loan application has been accepted!"
+                    "message": "Your loan application has been accepted!",
+                    "created_at": datetime.utcnow().isoformat()
                 }
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(send_user_notification(app.user_id, notification))
-                else:
-                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+                # Queue notification to be sent to the applicant
+                background_tasks.add_task(send_user_notification, app.user_id, notification)
             elif prev_status != "rejected" and new_status == "rejected":
                 rejection_reason = getattr(app, "manager_notes", "No reason provided")
                 notification = {
@@ -350,13 +384,10 @@ async def update_application(
                     "application_id": application_id,
                     "message": "Your loan application has been rejected.",
                     "reason": rejection_reason,
-                    "action": "view_rejection_details"
+                    "action": "view_rejection_details",
+                    "created_at": datetime.utcnow().isoformat()
                 }
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(send_user_notification(app.user_id, notification))
-                else:
-                    loop.run_until_complete(send_user_notification(app.user_id, notification))
+                background_tasks.add_task(send_user_notification, app.user_id, notification)
         except Exception as notify_err:
             logger.error(f"User notification error: {notify_err}")
 

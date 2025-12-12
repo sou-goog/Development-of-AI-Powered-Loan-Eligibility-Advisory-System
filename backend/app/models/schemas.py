@@ -219,6 +219,9 @@ class ApplicationStats(BaseModel):
     pending_applications: int
     approved_applications: int
     rejected_applications: int
+    voice_calls_count: Optional[int] = 0
+    avg_credit_score: Optional[float] = 0.0
+    loan_amount_distribution: Optional[List[Dict[str, Any]]] = None
 
 
 class ManagerApplicationResponse(BaseModel):
