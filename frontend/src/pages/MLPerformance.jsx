@@ -143,7 +143,12 @@ function MLPerformance() {
         },
       ],
     },
-    xgboost: {},
+    xgboost: {
+      accuracy: 0.95,
+      precision: 0.94,
+      recall: 0.93,
+      f1: 0.935,
+    },
     decision_tree: {},
     random_forest: {},
   };
