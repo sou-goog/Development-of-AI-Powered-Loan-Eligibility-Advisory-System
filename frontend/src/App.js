@@ -19,7 +19,7 @@ import ApplyPage from "./pages/ApplyPage";
 import EligibilityResultPage from "./pages/EligibilityResultPage";
 
 // Components
-import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtimeV2";
+import VoiceAgentRealtimeV2 from "./components/VoiceAgentRealtime_v2";
 
 // Dashboard pages
 import Login from "./pages/Login";
