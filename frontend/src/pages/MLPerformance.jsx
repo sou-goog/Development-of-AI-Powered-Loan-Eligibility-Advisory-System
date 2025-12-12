@@ -149,8 +149,8 @@ function MLPerformance() {
       recall: 0.93,
       f1: 0.935,
     },
-    decision_tree: {},
-    random_forest: {},
+    decision_tree: { accuracy: 0.89, precision: 0.88, recall: 0.87, f1: 0.875 },
+    random_forest: { accuracy: 0.86, precision: 0.85, recall: 0.84, f1: 0.845 },
   };
 
   // If serverModel is not loaded, use a sample fallback for display.
