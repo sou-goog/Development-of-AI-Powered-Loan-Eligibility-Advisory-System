@@ -81,13 +81,12 @@ groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 deepgram_client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
 ml_service = MLModelService() # Initialize ML Service
 import requests
-tts_session = requests.Session() # Global persistent session for TTS speed
+tts_session = requests.Session()
 
 async def get_groq_client():
     return groq_client
 
-# System prompt
-LOAN_AGENT_PROMPT = """You are LoanVoice, a friendly and efficient voice assistant for loan eligibility assessment.
+LOAN_AGENT_PROMPT = """You are LoanVoice. Be extremely concise. No small talk.
 
 Your Goal: Collect exactly these 6 fields. Do not stop until you have them all.
 CHECKLIST:
@@ -95,18 +94,21 @@ CHECKLIST:
 2. Monthly Income
 3. Credit Score
 4. Loan Amount Requested
-7. Employment Type (Salaried / Business)
-8. Loan Purpose (e.g., Personal, Home)
-9. Existing Monthly EMI (if any, else 0)
-10. Marital Status (Single / Married)
+5. Employment Type (Salaried / Business)
+6. Loan Purpose (e.g., Personal, Home)
 
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. If a field is present, DO NOT ASK FOR IT AGAIN.
 2. Only ask for ONE missing field at a time.
-3. If the user provides a value, extracted it into the JSON block.
-4. Greet the user first if 'name' is missing.
-5. Once ALL 6 fields are present in 'CURRENT KNOWN INFO', IMMEDIATELY say "Checking to see if you are eligible..." and output the full JSON.
-6. If user input clarifies a previous field (e.g., "Salaried"), update it.
+4. If name is missing, say: "Hi, I'm LoanVoice. What is your name?" (Nothing else).
+5. Once ALL 6 fields are present in 'CURRENT KNOWN INFO', IMMEDIATELY say "Checking eligibility..." and output the full JSON.
+6. If user input clarifies a previous field update it.
+7. MAX RESPOSE LENGTH: 10 words.
+8. Example: "Got it. What is your income?"
+9. If input is unclear (e.g. "So", "Um"), say: "Sorry, I didn't catch that. Please repeat."
+10. AGGRESSIVE NAME CAPTURE: If you just asked for a name, and the user says 1-2 words, ASSUME IT IS THEIR NAME.
+    EXCEPTION: If input is a greeting (Hello, Hi, Hey), DO NOT treat it as a name. Just ask "What is your name?" again.
+11. CORRECTIONS: If user says "Wait", "Actually", or changes a previous value, UPDATE the JSON and say "Got it, updated."
 
 CRITICAL INSTRUCTION:
 At the very end of your response, you MUST append the extracted data in JSON format, separated by '|||'.
@@ -114,12 +116,13 @@ Format:
 <Natural Language Response>
 |||
 |||
-{"name": "...", "monthly_income": 1000, "credit_score": 750, "loan_amount": 5000, "employment_type": "Salaried", "loan_purpose": "Personal", "existing_emi": 200, "marital_status": "Single"}
+{"name": "...", "monthly_income": 1000, "credit_score": 750, "loan_amount": 5000, "employment_type": "Salaried", "loan_purpose": "Personal"}
 
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
-If a field is unknown, omit it from the JSON. Always output the JSON block containing ANY new or updated fields.
+If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
+KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
+CRITICAL: ALWAYS output the JSON block containing the full current state at the end of every response.
 """
-
 # ========================== Helper Functions ==========================
 
 async def synthesize_speech_deepgram(text: str) -> Optional[bytes]:
@@ -161,14 +164,14 @@ async def voice_stream_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     session_id = str(uuid.uuid4())
-    logger.info(f"Voice session started: {session_id}")
+    logger.info(f"Voice session started: {session_id} | VERSION V4: NUCLEAR JSON FILTER ACTIVE")
     
     # State
     conversation_history = []
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1500&vad_events=true&endpointing=600"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1200&vad_events=true&endpointing=500"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -528,55 +531,142 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                 data["verification_requested"] = True
             return
 
-        # 2. ELIGIBILITY CHECK (Only runs if documents_verified == True)
-        if not data.get("eligibility_checked"):
-            try:
-                # Prepare data for ML
-                income = float(data.get("monthly_income", 0))
-                score = int(data.get("credit_score", 0))
-                amount = float(data.get("loan_amount", 0))
+            # 2. ELIGIBILITY CHECK (Only runs if documents_verified == True)
+            if not data.get("eligibility_checked"):
+                try:
+                    # Prepare data for ML
+                    income = float(data.get("monthly_income", 0))
+                    score = int(data.get("credit_score", 0))
+                    amount = float(data.get("loan_amount", 0))
 
-                # GUARD: Prevent premature check if values are effectively zero
-                if income < 100 or amount < 100 or score < 300:
-                        logger.warning(f"Premature Eligibility Check blocked: Income={income}, Score={score}, Amount={amount}")
-                        return
+                    # GUARD: Prevent premature check if values are effectively zero
+                    if income < 100 or amount < 100 or score < 300:
+                            logger.warning(f"Premature Eligibility Check blocked: Income={income}, Score={score}, Amount={amount}")
+                            return
 
-                logger.error(f"!!! DEBUG PROACTIVE CHECK !!! Income={income}, Score={score}, Amount={amount}")
+                    logger.error(f"!!! DEBUG PROACTIVE CHECK !!! Income={income}, Score={score}, Amount={amount}")
 
-                applicant = {
-                    "Monthly_Income": income,
-                    "Credit_Score": score,
-                    "Loan_Amount_Requested": amount,
-                    # Defaults
-                    "Loan_Tenure_Years": 5, 
-                    "Existing_EMI": 0,
-                }
-                
-                logger.info(f"APPLICANT FOR ML: {applicant}")
-                
-                result = ml_service.predict_eligibility(applicant)
-                data["eligibility_checked"] = True # Prevent loops
-                
-                # Send Success Result
-                await websocket.send_json({"type": "eligibility_result", "data": result})
-                
-                # Verbal Announcement
-                announcement = f"Based on your validated profile, you are {result['eligibility_score']*100:.0f} percent eligible."
-                if result['eligibility_status'] == 'eligible':
-                    announcement += " Your application looks strong."
-                else:
-                    announcement += " We might need to adjust the loan amount."
+                    applicant = {
+                        "Monthly_Income": income,
+                        "Credit_Score": score,
+                        "Loan_Amount_Requested": amount,
+                        # Defaults
+                        "Loan_Tenure_Years": 5, 
+                        "Existing_EMI": 0,
+                    }
                     
-                await websocket.send_json({"type": "assistant_transcript", "data": announcement})
-                
-                # Audio for announcement
-                audio = await synthesize_speech_deepgram(announcement)
-                if audio:
-                    b64 = base64.b64encode(audio).decode('ascii')
-                    await websocket.send_json({"type": "audio_chunk", "data": b64})
+                    logger.info(f"APPLICANT FOR ML: {applicant}")
+                    
+                    result = ml_service.predict_eligibility(applicant)
+                    data["eligibility_checked"] = True # Prevent loops
+                    
+                    # Send Success Result
+                    await websocket.send_json({"type": "eligibility_result", "data": result})
+                    
+                    # Verbal Announcement
+                    announcement = f"Based on your validated profile, you are {result['eligibility_score']*100:.0f} percent eligible."
+                    if result['eligibility_status'] == 'eligible':
+                        announcement += " Your application looks strong."
+                    else:
+                        announcement += " We might need to adjust the loan amount."
+                        
+                    await websocket.send_json({"type": "assistant_transcript", "data": announcement})
+                    
+                    # Audio for announcement
+                    audio = await synthesize_speech_deepgram(announcement)
+                    if audio:
+                        b64 = base64.b64encode(audio).decode('ascii')
+                        await websocket.send_json({"type": "audio_chunk", "data": b64})
 
+                except Exception as e:
+                    logger.error(f"Error in evaluate_eligibility: {e}")
+
+            # Start Sender Task (Frontend -> Deepgram)
+            async def sender_task():
+                logger.info("SENDER TASK STARTED")
+                try:
+                    while True:
+                        try:
+                            try:
+                                message = await asyncio.wait_for(websocket.receive(), timeout=5.0)
+                            except asyncio.TimeoutError:
+                                await dg_socket.send(json.dumps({"type": "KeepAlive"}))
+                                continue
+
+                            if "bytes" in message:
+                                await dg_socket.send(message["bytes"])
+                            elif "text" in message:
+                                data = json.loads(message["text"])
+                                if data.get("type") == "audio_data":
+                                    b64 = data.get("data")
+                                    if b64:
+                                         chunk = base64.b64decode(b64)
+                                         await dg_socket.send(chunk)
+                        except RuntimeError:
+                            break
+                        except Exception as e:
+                            logger.error(f"Sender Loop Error: {e}")
+                            break
+                except Exception as e:
+                    logger.error(f"Sender Task Fatal: {e}")
+                finally:
+                    logger.info("SENDER TASK EXITING")
+
+            # Start Receiver Task (Deepgram -> Frontend/LLM)
+            async def receiver_task():
+                logger.info("RECEIVER TASK STARTED")
+                llm_task = None
+                try:
+                    async for msg in dg_socket:
+                        res = json.loads(msg)
+                        channel = res.get('channel', {})
+                        alts = channel.get('alternatives', [])
+                        if alts:
+                            sentence = alts[0]['transcript']
+                            is_final = res.get('is_final', False)
+                            
+                            if is_final and len(sentence) > 0:
+                                # NOISE GATE: Ignore very short inputs or common hallucinations
+                                clean_text = sentence.strip().lower()
+                                # Allow: hi, no, ok, yes, hey. Block: "a", "", "thank you"
+                                if (len(clean_text) < 2 and clean_text not in ["i"]) or clean_text in ["thank you.", "thank you"]:
+                                    if clean_text not in ["hi", "no", "ok", "yes", "hey"]:
+                                         logger.info(f"Ignored noise/hallucination: {sentence}")
+                                         continue
+
+                                logger.info(f"User said (Accepted): {sentence}")
+
+                                # BARGE-IN: User spoke. Interrupt playback.
+                                await websocket.send_json({"type": "interrupt"})
+
+                                logger.info(f"User said: {sentence}")
+                                if llm_task and not llm_task.done(): 
+                                    llm_task.cancel()
+                                    logger.info("Cancelled previous LLM task for new input")
+                                
+                                await websocket.send_json({"type": "final_transcript", "data": sentence})
+                                # Call global process function
+                                llm_task = asyncio.create_task(process_llm_response(sentence, websocket, conversation_history, structured_data))
+                except Exception as e:
+                    logger.error(f"Receiver Task Error: {e}")
+                finally:
+                    logger.info("RECEIVER TASK EXITING")
+
+            # Run tasks concurrently
+            sender = asyncio.create_task(sender_task())
+            receiver = asyncio.create_task(receiver_task())
+            
+            try:
+                done, pending = await asyncio.wait(
+                    [sender, receiver],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
             except Exception as e:
-                logger.error(f"Error in evaluate_eligibility: {e}")
+                logger.error(f"Task Wait Error: {e}")
+
+
 
 async def process_llm_response(user_text: str, websocket: WebSocket, history: List[Dict], data: Dict, generate_audio: bool = True):
     """Process user text with Groq LLM and stream response."""
@@ -614,9 +704,54 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 continue
 
             # 2. State: Streaming Text
-            await websocket.send_json({"type": "ai_token", "data": content})
-            full_response += content
+            full_response += content # Track full response for history
+            
+            # Append to buffer for analysis
             sentence_buffer += content
+            
+            # SAFETY NET v4: NUCLEAR OPTION
+            # Any occurrence of '{' is treated as code start.
+            json_start_index = sentence_buffer.find('{')
+
+            if json_start_index != -1:
+                # JSON DETECTED!
+                logger.info("JSON detected in stream (Nuclear Check)! Switching mode.")
+                
+                # Split: Text | JSON
+                text_part = sentence_buffer[:json_start_index]
+                json_part = sentence_buffer[json_start_index:]
+                
+                # 1. Handle JSON
+                is_collecting_json = True
+                json_buffer += json_part
+                
+                # 2. Handle Text (Prevent Silence)
+                # Calculate the new safe text chunk to stream to frontend
+                # sentence_buffer = old_buffer + content
+                # text_part = old_buffer + safe_content
+                # safe_content = text_part - old_buffer
+                old_buffer_len = len(sentence_buffer) - len(content)
+                if len(text_part) > old_buffer_len:
+                    safe_new_chunk = text_part[old_buffer_len:]
+                    if safe_new_chunk:
+                         await websocket.send_json({"type": "ai_token", "data": safe_new_chunk})
+
+                # 3. Force TTS for the text part (Flush it)
+                if text_part.strip() and generate_audio:
+                     logger.info(f"TTS Streaming [Forced Flush]: {text_part[:30]}...")
+                     speech_chunk = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', text_part)
+                     audio = await synthesize_speech_deepgram(speech_chunk)
+                     if audio:
+                         b64 = base64.b64encode(audio).decode('ascii')
+                         await websocket.send_json({"type": "audio_chunk", "data": b64})
+
+                sentence_buffer = "" # Clear sentence buffer as we flushed it
+                continue
+
+            # If SAFE, stream tokens
+            await websocket.send_json({"type": "ai_token", "data": content})
+            
+            # Check for JSON delimiter (Legacy support for |||)
             
             # Check for JSON delimiter in the ACCUMULATED buffer
             # Check for JSON delimiter in the ACCUMULATED buffer
@@ -679,6 +814,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         
         # Parse JSON
         if json_buffer:
+            logger.info(f"PROCESSING JSON BUFFER: {json_buffer}")
             try:
                 # Remove markdown code blocks if present
                 clean_json = json_buffer.replace("```json", "").replace("```", "").strip()
@@ -708,19 +844,25 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 for k, v in extracted.items():
                     k_lower = k.lower().strip().replace(" ", "_")
                     
-                    # 1. Income
+    # 1. Income
                     if k_lower in ["income", "monthly_income", "monthlyincome", "salary", "annual_income"]:
-                         try: normalized["monthly_income"] = float(str(v).replace("$","").replace(",","")) 
+                         try: 
+                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            normalized["monthly_income"] = float(clean_val) 
                          except: pass
                     
                     # 2. Credit Score
                     elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:
-                         try: normalized["credit_score"] = int(str(v).replace(",",""))
+                         try: 
+                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            normalized["credit_score"] = int(float(clean_val))
                          except: pass
                          
                     # 3. Loan Amount
                     elif k_lower in ["loan_amount", "amount", "loanamount", "loan", "requested_amount"]:
-                         try: normalized["loan_amount"] = float(str(v).replace("$","").replace(",",""))
+                         try: 
+                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            normalized["loan_amount"] = float(clean_val)
                          except: pass
                          
                     # 4. Tenure
@@ -733,21 +875,13 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                         normalized["name"] = v
                     
                     # 6. Employment Type
+                    # 6. Employment Type
                     elif k_lower in ["employment_type", "employment", "job_type"]:
                         normalized["employment_type"] = v
                         
                     # 7. Loan Purpose
                     elif k_lower in ["loan_purpose", "purpose", "reason"]:
                         normalized["loan_purpose"] = v
-                        
-                    # 8. Existing EMI
-                    elif k_lower in ["existing_emi", "emi", "obligations", "debt"]:
-                        try: normalized["existing_emi"] = float(str(v).replace("$","").replace(",",""))
-                        except: pass
-                        
-                    # 9. Marital Status
-                    elif k_lower in ["marital_status", "marital", "marriage"]:
-                        normalized["marital_status"] = v
 
                 logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
                 data.update(normalized)
@@ -757,13 +891,12 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 
                 await websocket.send_json({"type": "structured_update", "data": normalized})
 
-
                 # PROACTIVE ELIGIBILITY CHECK
                 await evaluate_eligibility(data, websocket, ml_service)
 
-
-            except:
-                logger.error(f"Failed to parse JSON: {json_buffer}")
+            except Exception as json_err:
+                 # This catch block handles JSON parsing failures
+                 logger.error(f"Failed to parse JSON: {json_err}")
 
     except Exception as e:
         logger.error(f"LLM Error: {e}")

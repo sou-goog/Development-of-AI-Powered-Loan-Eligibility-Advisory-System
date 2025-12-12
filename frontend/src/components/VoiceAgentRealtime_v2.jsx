@@ -82,6 +82,7 @@ const VoiceAgentRealtime = () => {
   const [eligibilityResult, setEligibilityResult] = useState(null);
   const [showDocumentUpload, setShowDocumentUpload] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [readyForVerification, setReadyForVerification] = useState(null); // New state for manual redirect
 
   // Volume state for visualizer
   const [volume, setVolume] = useState(0);
@@ -259,6 +260,13 @@ const VoiceAgentRealtime = () => {
           setExtractedData((prev) => ({ ...prev, ...data }));
           break;
 
+        case "interrupt":
+          // NEW: Stop playback immediately
+          stopAudioPlayback();
+          currentAiTokenRef.current = "";
+          setCurrentAiToken("");
+          break;
+
         case "eligibility_result":
           setEligibilityResult(data);
           // Navigate to Result Page
@@ -272,9 +280,13 @@ const VoiceAgentRealtime = () => {
           break;
 
         case "document_verification_required":
-          // NEW: Redirect to Verification Page directly
+          // NEW: Wait for user to click button instead of auto-redirect
           if (data.application_id) {
-            navigate(`/verify?applicationId=${data.application_id}`);
+            setReadyForVerification({
+              appId: data.application_id,
+              message: "Verification is the next step."
+            });
+            toast.info("Data collection complete. Click 'Proceed to Verification' when ready.");
           } else {
             // Fallback if no ID (shouldn't happen with new backend)
             setShowDocumentUpload(true);
@@ -335,13 +347,10 @@ const VoiceAgentRealtime = () => {
 
       ws.onclose = () => {
         console.log("WebSocket closed");
-        setIsConnected(false);
-        // Only auto-reconnect if we are NOT intentionally recording/toggling
-        // setTimeout(() => {
-        //   if (wsRef.current === ws) {
-        //     connectWebSocket();
-        //   }
-        // }, 3000); 
+        // Only update state if this is still the active socket
+        if (wsRef.current === ws) {
+          setIsConnected(false);
+        }
       };
 
       wsRef.current = ws;
@@ -376,7 +385,7 @@ const VoiceAgentRealtime = () => {
 
       const source = audioContext.createMediaStreamSource(stream);
       const gainNode = audioContext.createGain();
-      gainNode.gain.value = 5.0; // 5x Digital Gain Boost
+      gainNode.gain.value = 10.0; // 10x Digital Gain Boost to catch soft voices
 
       const destination = audioContext.createMediaStreamDestination();
 
@@ -498,14 +507,19 @@ const VoiceAgentRealtime = () => {
   const handleCallToggle = () => {
     if (isRecording) {
       stopRecording();
-      // Close connection to reset backend state
-      if (wsRef.current) wsRef.current.close();
+      // DO NOT close connection. Keep it alive for toggling back on.
+      // if (wsRef.current) wsRef.current.close(); 
     } else {
-      // Start fresh connection -> Then record
-      setIsConnected(false); // UI feedback
-      connectWebSocket(() => {
+      // Reuse existing connection if valid
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         startRecording();
-      });
+      } else {
+        // Start fresh connection -> Then record
+        setIsConnected(false); // UI feedback
+        connectWebSocket(() => {
+          startRecording();
+        });
+      }
     }
   };
 
@@ -595,9 +609,17 @@ const VoiceAgentRealtime = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Bottom Controls Area (Fixed) */}
       <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-6 z-20">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
+          {/* Manual Verification Button */}
+          {readyForVerification && (
+            <button
+              onClick={() => navigate(`/verify?applicationId=${readyForVerification.appId}`)}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-semibold shadow-lg animate-pulse"
+            >
+              Proceed to Verification →
+            </button>
+          )}
           {/* Text Input Bar */}
           <div className="flex-1 relative">
             <input
