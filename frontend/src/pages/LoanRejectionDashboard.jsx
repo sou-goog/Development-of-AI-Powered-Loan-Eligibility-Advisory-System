@@ -22,7 +22,6 @@ function LoanRejectionDashboard() {
     { label: "Allowed EMI Limit", value: "₹10,000" },
   ];
 
-<<<<<<< HEAD
   const suggestions = [
     "Pay bills on time for 6 months.",
     "Keep credit card usage below 30%.",
@@ -33,40 +32,6 @@ function LoanRejectionDashboard() {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     alert("Sharable link copied!");
-=======
-  const handleShareDashboard = async () => {
-    setShareLoading(true);
-    setShareError("");
-    try {
-      // Use userId or application.user_id for sharing (adjust as needed)
-      const user_id = application?.user_id || userId;
-      if (!user_id) throw new Error("User ID not found");
-      const res = await loanAPI.shareDashboard(user_id);
-      setShareLink(res.data.link);
-      navigator.clipboard.writeText(res.data.link);
-      // Save the full public dashboard link and token to localStorage for manager dashboard
-      window.localStorage.setItem("publicDashboardLink", res.data.link);
-      try {
-        const url = new URL(res.data.link);
-        const parts = url.pathname.split("/");
-        const token = parts[parts.length - 1];
-        if (token) {
-          window.localStorage.setItem("publicDashboardToken", token);
-        }
-      } catch (e) {
-        // fallback: try to get token from string
-        const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
-        if (match && match[1]) {
-          window.localStorage.setItem("publicDashboardToken", match[1]);
-        }
-      }
-      alert("Sharable dashboard link copied!");
-    } catch (err) {
-      setShareError("Failed to generate share link");
-    } finally {
-      setShareLoading(false);
-    }
->>>>>>> backup/safe-branch
   };
 
   return (
@@ -113,39 +78,7 @@ function LoanRejectionDashboard() {
         </p>
         <p className="text-sm text-slate-300 mt-2">{detailedReason}</p>
       </div>
-
-        const handleShareDashboard = async () => {
-          setShareLoading(true);
-          setShareError("");
-          try {
-            // Use userId or application.user_id for sharing (adjust as needed)
-            const user_id = application?.user_id || userId;
-            if (!user_id) throw new Error("User ID not found");
-            const res = await loanAPI.shareDashboard(user_id);
-            setShareLink(res.data.link);
-            navigator.clipboard.writeText(res.data.link);
-            // Save the full public dashboard link and token to localStorage for manager dashboard
-            window.localStorage.setItem("publicDashboardLink", res.data.link);
-            try {
-              const url = new URL(res.data.link);
-              const parts = url.pathname.split("/");
-              const token = parts[parts.length - 1];
-              if (token) {
-                window.localStorage.setItem("publicDashboardToken", token);
-              }
-            } catch (e) {
-              // fallback: try to get token from string
-              const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
-              if (match && match[1]) {
-                window.localStorage.setItem("publicDashboardToken", match[1]);
-              }
-            }
-          } catch (err) {
-            setShareError(err.message || "Error sharing dashboard");
-          } finally {
-            setShareLoading(false);
-          }
-        };
+    </AdminLayout>
   );
 }
 

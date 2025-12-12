@@ -233,8 +233,9 @@ const LoanResultCard = ({
               >
                 <div className="flex items-center space-x-3 mb-2">
                   <div
-                    className={`p-2 rounded-lg ${metric.bgColor || "bg-gray-100"
-                      }`}
+                    className={`p-2 rounded-lg ${
+                      metric.bgColor || "bg-gray-100"
+                    }`}
                   >
                     <metric.icon className={`w-4 h-4 ${metric.color}`} />
                   </div>
@@ -295,7 +296,7 @@ const LoanResultCard = ({
                       e?.response?.data ||
                       e?.message ||
                       msg;
-                  } catch (__) { }
+                  } catch (__) {}
                   setAnalysisError(String(msg));
                 } finally {
                   setLoadingExplain(false);
@@ -311,32 +312,6 @@ const LoanResultCard = ({
               {loadingExplain ? "Generating analysis..." : "Explain with AI"}
             </button>
 
-<<<<<<< HEAD
-            <button
-              disabled={!applicationId || reportLoading}
-              onClick={async () => {
-                if (!applicationId) return;
-                setReportLoading(true);
-                try {
-                  // Ensure report exists
-                  await reportAPI.generateReport(applicationId);
-                  // Then trigger download
-                  const res = await reportAPI.downloadReport(applicationId);
-                  const contentType =
-                    res.headers?.["content-type"] || "application/pdf";
-                  const blob = new Blob([res.data], { type: contentType });
-                  const url = window.URL.createObjectURL(blob);
-                  // If the server returned HTML (fallback), open in new tab so browser can render it.
-                  if (contentType.includes("html")) {
-                    window.open(url, "_blank");
-                  } else {
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `loan_report_${applicationId}${contentType.includes("pdf") ? ".pdf" : ""
-                      }`;
-                    a.click();
-                    a.remove();
-=======
             <div className="flex gap-3">
               <button
                 disabled={!applicationId || reportLoading}
@@ -369,7 +344,6 @@ const LoanResultCard = ({
                     // optional: toast
                   } finally {
                     setReportLoading(false);
->>>>>>> backup/safe-branch
                   }
                 }}
                 className="px-4 py-2 rounded-md bg-gray-800 text-white disabled:opacity-60"
@@ -382,7 +356,7 @@ const LoanResultCard = ({
                 {reportLoading ? "Preparing report..." : "Download PDF Report"}
               </button>
               <button
-                onClick={() => window.location.href = '/admin/dashboard'}
+                onClick={() => (window.location.href = "/admin/dashboard")}
                 className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
                 title="Go to Dashboard"
               >

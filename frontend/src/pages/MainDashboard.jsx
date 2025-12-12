@@ -13,57 +13,23 @@ import {
 } from "recharts";
 
 function MainDashboard() {
+  const stats = null;
+  const incomeVsEligibility = [
+    { income: "20k", score: 0.4 },
+    { income: "40k", score: 0.6 },
+    { income: "60k", score: 0.8 },
+    { income: "80k", score: 0.9 },
+  ];
   // KPI Data
   const kpis = [
     { title: "Total Applications", value: 428 },
     { title: "Eligible Applications", value: 276 },
     { title: "Voice Calls Handled", value: 612 },
     { title: "Average Credit Score", value: 731 },
-    const handleShareDashboard = async () => {
-      setShareLoading(true);
-      setShareError("");
-      try {
-        const user_id = user?.id;
-        if (!user_id) throw new Error("User ID not found");
-        const res = await loanAPI.shareDashboard(user_id);
-        setShareLink(res.data.link);
-        navigator.clipboard.writeText(res.data.link);
-        // Save the full public dashboard link and token to localStorage for manager dashboard
-        window.localStorage.setItem("publicDashboardLink", res.data.link);
-        try {
-          const url = new URL(res.data.link);
-          const parts = url.pathname.split("/");
-          const token = parts[parts.length - 1];
-          if (token) {
-            window.localStorage.setItem("publicDashboardToken", token);
-          }
-        } catch (e) {
-          // fallback: try to get token from string
-          const match = res.data.link.match(/public-dashboard\/([^/?#]+)/);
-          if (match && match[1]) {
-            window.localStorage.setItem("publicDashboardToken", match[1]);
-          }
-        }
-      } catch (err) {
-        setShareError(err.message || "Error sharing dashboard");
-      } finally {
-        setShareLoading(false);
-      }
-    };
-        if (match && match[1]) {
-          window.localStorage.setItem("publicDashboardToken", match[1]);
-        }
-      }
-    } catch (err) {
-      setShareError("Failed to generate share link");
-    } finally {
-      setShareLoading(false);
-    }
-  };
+  ];
 
   // Bar Chart – Loan Amount Ranges (dynamic if API provides)
   const loanRanges = stats?.loan_amount_distribution || [
->>>>>>> backup/safe-branch
     { range: "< 2L", count: 95 },
     { range: "2–5L", count: 162 },
     { range: "5–10L", count: 112 },
@@ -89,7 +55,6 @@ function MainDashboard() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
         {/* Income vs Eligibility Chart */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
           <p className="text-sm mb-2 font-semibold">
@@ -123,7 +88,6 @@ function MainDashboard() {
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
     </AdminLayout>
   );
