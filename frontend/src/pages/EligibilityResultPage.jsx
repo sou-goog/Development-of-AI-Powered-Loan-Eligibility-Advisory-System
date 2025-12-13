@@ -25,18 +25,10 @@ export default function EligibilityResultPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-100/80 via-white to-secondary-100/80 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       <div className="max-w-3xl mx-auto pt-10 px-4">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">
+        <div className="mb-8 flex justify-center">
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white text-center">
             Loan Assessment Result
           </h1>
-          <div className="flex gap-3">
-            <button
-              onClick={() => navigate("/")}
-              className="px-6 py-2 bg-primary-600 text-white font-semibold rounded-full shadow hover:bg-primary-700 transition"
-            >
-              Go to Home
-            </button>
-          </div>
         </div>
         <LoanResultCard
           result={result}

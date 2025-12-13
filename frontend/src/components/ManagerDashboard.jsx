@@ -400,6 +400,9 @@ export default function ManagerDashboard() {
                     Eligibility
                   </th>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
+                    Mode
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">
                     Status
                   </th>
                   <th className="px-6 py-3 text-right text-sm font-medium text-gray-600">
@@ -497,6 +500,15 @@ export default function ManagerDashboard() {
                         </div>
                       </td>
 
+                      <td className="px-6 py-4 text-sm">
+                        {app.mode ? (
+                          <span className="inline-block px-2 py-1 rounded bg-blue-100 text-blue-800 text-xs font-semibold">
+                            {app.mode}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm">
                         <StatusBadge status={app.approval_status} />
                       </td>
@@ -634,6 +646,11 @@ export default function ManagerDashboard() {
                       icon={CheckCircle}
                       label="Approval Status"
                       value={selectedApp.approval_status}
+                    />
+                    <ContactField
+                      icon={BarChart3}
+                      label="Application Mode"
+                      value={selectedApp.mode || "—"}
                     />
                     <ContactField
                       icon={FileText}

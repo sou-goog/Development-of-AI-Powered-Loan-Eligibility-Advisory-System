@@ -506,7 +506,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         # Defaults
                         email="voice_user@example.com", 
                         phone="0000000000",
-                        approval_status="draft",
+                        approval_status="pending",
                         document_verified=False,
                         created_at=datetime.utcnow()
                     )

@@ -27,6 +27,69 @@ router = APIRouter()
 
 ml_service = MLModelService()
 
+# ...existing code...
+
+# New route for rejection details by application_id
+@router.get("/rejection/application/{application_id}")
+async def get_rejection_details_by_application_id(application_id: int, db: Session = Depends(get_db)):
+    """
+    Get the rejection details for a specific application by application_id.
+    """
+    app = (
+        db.query(LoanApplication)
+        .filter(LoanApplication.id == application_id, LoanApplication.approval_status == "rejected")
+        .first()
+    )
+    if not app:
+        raise HTTPException(status_code=404, detail="No rejected application found for this application ID")
+    return {
+        "applicant_name": app.full_name,
+        "application_id": f"APP-{app.id}",
+        "loan_amount": f"₹{app.loan_amount_requested:,.2f}",
+        "loan_type": app.loan_purpose or "Personal Loan",
+        "rejection_reason": app.manager_notes or "Eligibility criteria not met",
+        "detailed_reason": "Your application did not meet the required eligibility score or credit criteria.",
+        "metrics": [
+            {"label": "Your Credit Score", "value": f"{app.credit_score} / 900"},
+            {"label": "Required Score", "value": "700 / 900"},
+            {"label": "Monthly Income", "value": f"₹{app.monthly_income:,.2f}"},
+            {"label": "Required Income", "value": "₹35,000"},
+        ],
+        "suggestions": [
+            "Improve your credit score by paying bills on time.",
+            "Reduce existing liabilities before re-applying.",
+            "Ensure a stable monthly income."
+        ]
+    }
+"""
+Loan Prediction Routes + Application management
+(Original file preserved; added missing GET /applications/{application_id} route)
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from app.models.database import get_db, LoanApplication
+from app.models.database import SharedDashboardLink
+from app.models.schemas import (
+    LoanPredictionRequest,
+    LoanPredictionResponse,
+    LoanApplicationCreate,
+    LoanApplicationResponse,
+)
+from datetime import datetime
+from app.services.ml_model_service import MLModelService
+from app.utils.logger import get_logger
+from app.services.report_service import ReportService
+from typing import Dict, Any
+from app.utils.security import decode_token
+from app.models.database import User
+
+logger = get_logger(__name__)
+router = APIRouter()
+
+ml_service = MLModelService()
+
 
 def _get_current_user(request: Request, db: Session) -> User | None:
     """Extract current user from Authorization bearer token."""
