@@ -109,7 +109,7 @@ Instructions:
 7. MAX RESPONSE LENGTH: 15 words. Keep it conversational but brief.
 8. Avoid repetitive "Got it" phrases. Vary your acknowledgments (e.g., "Okay," "Sure," "Understood," "Thanks").
 9. If input is unclear, politely ask for clarification.
-10. AGGRESSIVE NAME CAPTURE: If asking for name and user gives 1-2 words, accept it as name. Exclude greetings.
+10. AGGRESSIVE NAME CAPTURE: If asking for name and user gives 1-2 words, accept it as name. Exclude greetings. Exclude TITLES (Mr, Mrs, Dr, Er) if they are the ONLY word.
 11. CORRECTIONS: If user corrects value, acknowledge it: "Oh, updated that for you."
  
 CRITICAL INSTRUCTION:
@@ -173,7 +173,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=300"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -657,7 +657,8 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                                 # NOISE GATE: Ignore very short inputs or common hallucinations
                                 clean_text = sentence.strip().lower()
                                 # Allow: hi, no, ok, yes, hey. Block: "a", "", "thank you"
-                                if (len(clean_text) < 2 and clean_text not in ["i"]) or clean_text in ["thank you.", "thank you"]:
+                                # FIX: Allow digits! (e.g. "5", "1")
+                                if (len(clean_text) < 2 and not clean_text.isdigit() and clean_text not in ["i"]) or clean_text in ["thank you.", "thank you"]:
                                     if clean_text not in ["hi", "no", "ok", "yes", "hey"]:
                                          logger.info(f"Ignored noise/hallucination: {sentence}")
                                          continue
@@ -738,6 +739,15 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
             
             # 0. KEYWORD SUPPRESSION LOGIC (V5 - Prefix Buffering)
             if not is_collecting_json:
+                # FAST PATH: Immediately allow safe conversational starters
+                # This prevents "Prefix Check" latency for common words
+                SAFE_STARTERS = ["Okay", "Sure", "Thanks", "Yes", "No", "Right", "Great", "Ah", "Oh"]
+                if any(content.lstrip().startswith(s) for s in SAFE_STARTERS) and not sentence_buffer:
+                     await websocket.send_json({"type": "ai_token", "data": content})
+                     sentence_buffer += content
+                     full_response += content
+                     continue
+
                 # Check if what we are building is a prefix of the forbidden phrases
                 RISKY_PHRASES = ["Perfect. I have all your details", "I am taking you to the verification"]
                 
@@ -875,7 +885,6 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 continue
 
             # Check for sentence delimiters (Sentence-Level Streaming)
-            # RE-ADDED Comma to reduce latency (User Request: "Takes too long to speak")
             delimiters = ['. ', '? ', '! ', '.\n', '?\n', '!\n', ', ', ',\n']
             if any(punct in sentence_buffer for punct in delimiters):
                 for delimiter in delimiters:
@@ -885,6 +894,19 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                          complete_sentence = delimiter.join(parts[:-1]) + delimiter.strip()
                          remainder = parts[-1]
                          
+                         # SMART TTS LOGIC v3 (Stability Focused):
+                         # Only split on commas if:
+                         # 1. It is a Safe Starter (Instant Ack: "Okay,")
+                         # 2. OR The chunk is LONG enough to be worth speaking (> 40 chars) to hide latency.
+                         if delimiter.strip() == ',':
+                             SAFE_STARTERS = ["Okay", "Sure", "Thanks", "Yes", "No", "Right", "Great"]
+                             is_safe = any(complete_sentence.lstrip().startswith(s) for s in SAFE_STARTERS)
+                             
+                             if not is_safe and len(complete_sentence) < 40:
+                                 # It's a short/medium fragment (e.g. "However," or "Then I said,").
+                                 # Don't split. Buffer it to ensure smooth flow.
+                                 continue
+
                          # FIX: Check for duplicate message
                          is_duplicate = "Perfect. I have all your details" in complete_sentence
                          if complete_sentence.strip() and generate_audio and not is_duplicate:
