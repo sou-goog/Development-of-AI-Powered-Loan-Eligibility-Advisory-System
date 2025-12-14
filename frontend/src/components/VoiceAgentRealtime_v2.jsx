@@ -269,11 +269,12 @@ const VoiceAgentRealtime = () => {
 
         case "eligibility_result":
           setEligibilityResult(data);
-          // Navigate to Result Page
+          // Ensure applicationId is always set
+          const appId = data.application_id || readyForVerification?.appId || null;
           navigate("/eligibility-result", {
             state: {
               result: data,
-              applicationId: data.application_id,
+              applicationId: appId,
               extractedData: extractedDataRef.current
             }
           });
@@ -316,7 +317,7 @@ const VoiceAgentRealtime = () => {
           console.warn("Unknown message type:", type);
       }
     },
-    [queueAudioChunk, stopAudioPlayback, navigate]
+    [queueAudioChunk, stopAudioPlayback, navigate, readyForVerification?.appId]
   );
 
   /**
