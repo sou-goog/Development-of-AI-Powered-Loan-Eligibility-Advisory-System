@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import ManagerNotifications from "./ManagerNotifications";
+
 
 const sidebarLinks = [
   { label: "Home", to: "/" },
@@ -53,8 +53,7 @@ const AdminLayout = ({ children }) => {
       </aside>
       {/* Main Content */}
       <main className="flex-1 p-8">{children}</main>
-      {/* Manager notifications overlay */}
-      <ManagerNotifications />
+      {/* Manager notifications overlay removed */}
     </div>
   );
 };

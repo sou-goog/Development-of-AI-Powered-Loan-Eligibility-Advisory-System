@@ -359,6 +359,7 @@ const LoanResultCard = ({
                 onClick={() => (window.location.href = "/admin/dashboard")}
                 className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
                 title="Go to Dashboard"
+                style={{ marginLeft: '0.5rem' }}
               >
                 Go to Dashboard
               </button>

@@ -91,10 +91,26 @@ export default function UserDashboard() {
           {applicationId && (
             <button
               className="btn-primary mt-2 flex items-center gap-2"
-              onClick={() => {
-                const shareUrl = `${window.location.origin}/dashboard?applicationId=${applicationId}`;
-                navigator.clipboard.writeText(shareUrl);
-                alert('Dashboard link copied! You can share it with others.');
+              onClick={async () => {
+                try {
+                  const user = window.auth?.getUser ? window.auth.getUser() : (typeof auth !== 'undefined' ? auth.getUser() : null);
+                  const userId = user?.id;
+                  if (!userId) {
+                    alert('User ID not found. Please log in again.');
+                    return;
+                  }
+                  const res = await (window.managerAPI ? window.managerAPI.shareDashboard(userId) : (await import('../utils/api')).managerAPI.shareDashboard(userId));
+                  const token = res?.data?.token;
+                  if (token) {
+                    const publicUrl = `${window.location.origin}/public-dashboard/${token}`;
+                    await navigator.clipboard.writeText(publicUrl);
+                    alert('Public dashboard link copied! You can share it with others.');
+                  } else {
+                    alert('Could not retrieve dashboard link.');
+                  }
+                } catch (err) {
+                  alert('Failed to get dashboard link.');
+                }
               }}
               title="Copy shareable dashboard link"
             >

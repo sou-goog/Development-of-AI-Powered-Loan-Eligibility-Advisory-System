@@ -1,5 +1,6 @@
 // src/pages/MainDashboard.jsx
 import React, { useEffect, useState } from "react";
+import { authAPI } from "../utils/api";
 import AdminLayout from "../components/AdminLayout";
 import { managerAPI } from "../utils/api";
 import {
@@ -16,6 +17,23 @@ import {
 function MainDashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+  // Get current user (for user_id)
+  const [userId, setUserId] = useState(null);
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const { data } = await authAPI.getCurrentUser();
+        setUserId(data.id);
+      } catch {
+        setUserId(null);
+      }
+    }
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     async function fetchStats() {
@@ -69,7 +87,81 @@ function MainDashboard() {
 
   return (
     <AdminLayout>
-      <h1 className="text-xl font-semibold mb-6">Executive Summary</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold">Executive Summary</h1>
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors duration-150"
+          onClick={async () => {
+            if (!userId) {
+              setShareError("User not found. Please re-login.");
+              setShareModalOpen(true);
+              return;
+            }
+            setShareLoading(true);
+            setShareError("");
+            try {
+              const res = await managerAPI.shareDashboard(userId);
+              setShareLink(res.data.link);
+              setShareModalOpen(true);
+            } catch (err) {
+              setShareError("Failed to generate share link.");
+              setShareModalOpen(true);
+            } finally {
+              setShareLoading(false);
+            }
+          }}
+          disabled={shareLoading}
+        >
+          {shareLoading ? "Generating..." : "Share Dashboard"}
+        </button>
+      </div>
+
+      {/* Share Modal */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+              onClick={() => setShareModalOpen(false)}
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-bold mb-4 text-gray-800">Share Dashboard Link</h2>
+            {shareError ? (
+              <div className="text-red-500 mb-4">{shareError}</div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  className="w-full border rounded px-3 py-2 mb-3 text-gray-700 bg-gray-100"
+                  value={shareLink}
+                  readOnly
+                  onFocus={e => e.target.select()}
+                />
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow mr-2"
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareLink);
+                  }}
+                  disabled={!shareLink}
+                >
+                  Copy Link
+                </button>
+                {shareLink && (
+                  <a
+                    href={shareLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-blue-700 underline"
+                  >
+                    Open Public Dashboard
+                  </a>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

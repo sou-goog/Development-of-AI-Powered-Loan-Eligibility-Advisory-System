@@ -69,7 +69,7 @@ function LoanRejectionDashboard() {
         <p className="text-2xl font-bold text-red-400 mt-1">
           ❌ Loan Application Rejected
         </p>
-        <p className="text-sm text-slate-300 mt-2">
+        <p className="text-sm text-red-500 mt-2 font-semibold">
           This loan could not be approved due to eligibility criteria.
         </p>
       </div>
