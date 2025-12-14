@@ -173,7 +173,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1200&vad_events=true&endpointing=500"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=300"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -874,8 +874,9 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 sentence_buffer = "" # Clear buffer forever
                 continue
 
-            # Check for sentence delimiters (Sentence-Level Streaming) - Removed Comma to prevent chopping
-            delimiters = ['. ', '? ', '! ', '.\n', '?\n', '!\n']
+            # Check for sentence delimiters (Sentence-Level Streaming)
+            # RE-ADDED Comma to reduce latency (User Request: "Takes too long to speak")
+            delimiters = ['. ', '? ', '! ', '.\n', '?\n', '!\n', ', ', ',\n']
             if any(punct in sentence_buffer for punct in delimiters):
                 for delimiter in delimiters:
                      if delimiter in sentence_buffer:
