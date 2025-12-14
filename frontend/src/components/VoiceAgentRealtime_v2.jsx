@@ -482,6 +482,11 @@ const VoiceAgentRealtime = () => {
       streamRef.current = null;
     }
 
+    // FIX: Send "Flush" signal to backend to force immediate processing of buffer
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "interaction_end" }));
+    }
+
     // FIX: Do NOT close AudioContext here, as it is used for Playback too.
     // It will be closed on component unmount (useEffect cleanup).
     /* 

@@ -86,9 +86,9 @@ tts_session = requests.Session()
 async def get_groq_client():
     return groq_client
 
-LOAN_AGENT_PROMPT = """You are LoanVoice. Be extremely concise. No small talk.
-
-Your Goal: Collect exactly these 6 fields. Do not stop until you have them all.
+LOAN_AGENT_PROMPT = """You are LoanVoice. Be polite, friendly, but efficient.
+ 
+Your Goal: Collect exactly these 6 fields naturally.
 CHECKLIST:
 1. Full Name
 2. Monthly Income
@@ -96,28 +96,29 @@ CHECKLIST:
 4. Loan Amount Requested
 5. Employment Type (Salaried / Business)
 6. Loan Purpose (e.g., Personal, Home)
-
+ 
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
-2. If a field is `""` or `0`, it is MISSING. ASK FOR IT.
+2. If a field is `""` or `0`, it is MISSING. Ask for it naturally.
 3. Only ask for ONE missing field at a time.
-4. If name is missing, say: "Hi, I'm LoanVoice. What is your name?" (Nothing else).
-5. Once ALL 6 fields are valid (non-zero, non-empty) in 'CURRENT KNOWN INFO', IMMEDIATELY output the full JSON. Do NOT say "Perfect. I have all your details." (The system will handle that).
-6. If user input clarifies a previous field update it.
-7. MAX RESPOSE LENGTH: 10 words.
-8. Example: "Got it. What is your income?"
-9. If input is unclear (e.g. "So", "Um"), say: "Sorry, I didn't catch that. Please repeat."
-10. AGGRESSIVE NAME CAPTURE: If you just asked for a name, and the user says 1-2 words, ASSUME IT IS THEIR NAME.
-    EXCEPTION: If input is a greeting (Hello, Hi, Hey), DO NOT treat it as a name. Just ask "What is your name?" again.
-11. CORRECTIONS: If user says "Wait", "Actually", or changes a previous value, UPDATE the JSON and say "Got it, updated."
-
+4. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
+5. Once ALL 6 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
+   - CRITICAL: Do NOT summarize the collected fields like "Here are the details I have...".
+   - CRITICAL: Just say something brief like "Thanks." or nothing at all before the JSON.
+6. If user input clarifies a previous field, update it.
+7. MAX RESPONSE LENGTH: 15 words. Keep it conversational but brief.
+8. Avoid repetitive "Got it" phrases. Vary your acknowledgments (e.g., "Okay," "Sure," "Understood," "Thanks").
+9. If input is unclear, politely ask for clarification.
+10. AGGRESSIVE NAME CAPTURE: If asking for name and user gives 1-2 words, accept it as name. Exclude greetings.
+11. CORRECTIONS: If user corrects value, acknowledge it: "Oh, updated that for you."
+ 
 CRITICAL INSTRUCTION:
 At the very end of your response, you MUST append the extracted data in JSON format, separated by '|||'.
 Format:
 <Natural Language Response>
 |||
 {"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": ""}
-
+ 
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
 If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
 KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
@@ -357,6 +358,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
                                             # Wait for user to click "Done" in frontend
                                             pass
 
+                                        elif data_json.get("type") == "interaction_end":
+                                            logger.info("INTERACTION END - Mic Toggled Off. Sending KeepAlive to flush/maintain connection.")
+                                            await dg_socket.send(json.dumps({"type": "KeepAlive"}))
+                                            # Optional: If we want to force Close: await dg_socket.send(json.dumps({"type": "CloseStream"}))
+                                            # But we want to KeepAlive for resume.
+
                                         elif data_json.get("type") == "verification_completed":
                                             logger.info("VERIFICATION COMPLETED - Verifying and Re-checking Eligibility")
                                             structured_data["documents_verified"] = True
@@ -486,24 +493,11 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
             # Check if we already asked (to prevent spamming, optional but good UX)
             if not data.get("verification_requested"):
                 # LOCK IMMEDIATELY to prevent race conditions (Echo/Barge-in)
+                # LOCK IMMEDIATELY to prevent race conditions (Echo/Barge-in)
                 data["verification_requested"] = True
                 logger.info("Critical Data Present -> REQUESTING DOCUMENT VERIFICATION")
-                
-                # Construct applicant data for frontend to pre-fill if needed
-                applicant_preview = {
-                    "monthly_income": data.get("monthly_income"),
-                    "loan_amount": data.get("loan_amount"),
-                    "credit_score": data.get("credit_score")
-                }
-                
-                # Audio Announcement
-                speech_text = "Perfect. I have all your details. I am taking you to the verification step now."
-                audio = await synthesize_speech_deepgram(speech_text)
-                if audio:
-                    b64 = base64.b64encode(audio).decode('ascii')
-                    await websocket.send_json({"type": "audio_chunk", "data": b64})
 
-                # Create Draft Application in DB to get ID
+                # 1. Save to Database FIRST (To get ID)
                 application_id = None
                 try:
                     db = next(get_db())
@@ -532,9 +526,16 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                     logger.info(f"Created Draft Application ID: {application_id}")
                 except Exception as db_e:
                     logger.error(f"Failed to create draft application: {db_e}")
-                    # Fallback to random ID if DB fails (unlikely)
                     application_id = 9999
 
+                # 2. Send Signal to Frontend IMMEDIATELLY (Show Button, Stop Mic)
+                speech_text = "Perfect. I have all your details. I am taking you to the verification step now."
+                applicant_preview = {
+                    "monthly_income": data.get("monthly_income"),
+                    "loan_amount": data.get("loan_amount"),
+                    "credit_score": data.get("credit_score")
+                }
+                
                 await websocket.send_json({
                     "type": "document_verification_required", 
                     "data": {
@@ -543,8 +544,15 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         "application_id": application_id
                     }
                 })
-                # Flag set at the start to prevent race conditions
-            return
+
+                # 3. Generate & Send Audio (Parallel-ish to UI)
+                # Now that button is visible, we play the audio
+                audio = await synthesize_speech_deepgram(speech_text)
+                if audio:
+                    b64 = base64.b64encode(audio).decode('ascii')
+                    await websocket.send_json({"type": "audio_chunk", "data": b64})
+
+                return
 
             # 2. ELIGIBILITY CHECK (Only runs if documents_verified == True)
             if not data.get("eligibility_checked"):
@@ -963,7 +971,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                          except: pass
                          
                     # 3. Loan Amount
-                    elif k_lower in ["loan_amount", "amount", "loanamount", "loan", "requested_amount"]:
+                    elif k_lower in ["loan_amount", "amount", "loanamount", "loan", "requested_amount", "amount_requested", "total_amount"]:
                          try: 
                             clean_val = re.sub(r'[^\d.]', '', str(v))
                             normalized["loan_amount"] = float(clean_val)
@@ -975,22 +983,18 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                          except: pass
                          
                     # 5. Name (Pass through)
-                    elif k_lower == "name":
+                    elif k_lower in ["name", "full_name", "fullname", "first_name", "user_name"]:
                         normalized["name"] = v
                     
                     # 6. Employment Type
-                    # 6. Employment Type
-                    elif k_lower in ["employment_type", "employment", "job_type"]:
+                    elif k_lower in ["employment_type", "employment", "job_type", "employment_status", "work_type", "profession", "type"]:
                         normalized["employment_type"] = v
                         
                     # 7. Loan Purpose
-                    elif k_lower in ["loan_purpose", "purpose", "reason"]:
+                    elif k_lower in ["loan_purpose", "purpose", "reason", "loan_reason"]:
                         normalized["loan_purpose"] = v
 
                 logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
-                logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
-                
-                # FIX: Data Latch Logic (Prevent Amnesia)
                 # Only update keys if the new value is valid (non-zero/non-empty)
                 # This stops the LLM from wiping existing data with hallucinated 0s
                 for key, value in normalized.items():
