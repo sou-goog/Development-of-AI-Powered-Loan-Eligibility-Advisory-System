@@ -280,18 +280,26 @@ const VoiceAgentRealtime = () => {
           break;
 
         case "document_verification_required":
-          // NEW: Wait for user to click button instead of auto-redirect
+          // NEW: Stop mic immediately
+          stopRecording();
+
+          // NEW: Clear pending text
+          currentAiTokenRef.current = "";
+          setCurrentAiToken("");
+
+          // Manual Redirect Logic
           if (data.application_id) {
             setReadyForVerification({
               appId: data.application_id,
-              message: "Verification is the next step."
+              message: "Please click Proceed to verify documents."
             });
-            toast.info("Data collection complete. Click 'Proceed to Verification' when ready.");
+            toast.success("Details captured! Click 'Proceed to Verification' to continue.");
+            // No auto-redirect
           } else {
-            // Fallback if no ID (shouldn't happen with new backend)
             setShowDocumentUpload(true);
             setExtractedData(data.structured_data);
           }
+
           if (data.message) {
             setFinalTranscripts((prev) => [
               ...prev,
@@ -473,10 +481,14 @@ const VoiceAgentRealtime = () => {
       streamRef.current = null;
     }
 
+    // FIX: Do NOT close AudioContext here, as it is used for Playback too.
+    // It will be closed on component unmount (useEffect cleanup).
+    /* 
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    */
 
     setIsRecording(false);
     isRecordingRef.current = false;

@@ -98,10 +98,11 @@ CHECKLIST:
 6. Loan Purpose (e.g., Personal, Home)
 
 Instructions:
-1. Look at 'CURRENT KNOWN INFO'. If a field is present, DO NOT ASK FOR IT AGAIN.
-2. Only ask for ONE missing field at a time.
+1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
+2. If a field is `""` or `0`, it is MISSING. ASK FOR IT.
+3. Only ask for ONE missing field at a time.
 4. If name is missing, say: "Hi, I'm LoanVoice. What is your name?" (Nothing else).
-5. Once ALL 6 fields are present in 'CURRENT KNOWN INFO', IMMEDIATELY say "Checking eligibility..." and output the full JSON.
+5. Once ALL 6 fields are valid (non-zero, non-empty) in 'CURRENT KNOWN INFO', IMMEDIATELY output the full JSON. Do NOT say "Perfect. I have all your details." (The system will handle that).
 6. If user input clarifies a previous field update it.
 7. MAX RESPOSE LENGTH: 10 words.
 8. Example: "Got it. What is your income?"
@@ -115,13 +116,13 @@ At the very end of your response, you MUST append the extracted data in JSON for
 Format:
 <Natural Language Response>
 |||
-|||
-{"name": "...", "monthly_income": 1000, "credit_score": 750, "loan_amount": 5000, "employment_type": "Salaried", "loan_purpose": "Personal"}
+{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": ""}
 
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
 If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
 KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
 CRITICAL: ALWAYS output the JSON block containing the full current state at the end of every response.
+CRITICAL: Do NOT begin your response with "CURRENT KNOWN INFO:". Start directly with the question or answer.
 """
 # ========================== Helper Functions ==========================
 
@@ -459,12 +460,24 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
     Centralized logic to check eligibility criteria and trigger result OR document verification.
     """
     # Simply: Check strictly against 'data' which is the source of truth
-    has_income = data.get("monthly_income") is not None
-    has_score = data.get("credit_score") is not None
-    has_amount = data.get("loan_amount") is not None
-    
+    # FIX: Check for TRUTHINESS (non-zero, non-empty), not just existence
+    income = data.get("monthly_income", 0)
+    score = data.get("credit_score", 0)
+    amount = data.get("loan_amount", 0)
+    name = data.get("name", "")
+    employment = data.get("employment_type", "")
+    purpose = data.get("loan_purpose", "")
+    # Required Fields Check
+    has_income = dict(data).get("monthly_income") and float(income) > 0
+    has_score = dict(data).get("credit_score") and int(score) > 0 
+    has_amount = dict(data).get("loan_amount") and float(amount) > 0
+    # FIX: Reject "..." as valid string
+    has_name = len(str(name).strip()) > 1 and "..." not in str(name)
+    has_employment = len(str(employment).strip()) > 2 and "..." not in str(employment)
+    has_purpose = len(str(purpose).strip()) > 2 and "..." not in str(purpose)
+
     # If we have all required fields
-    if has_income and has_score and has_amount:
+    if has_income and has_score and has_amount and has_name and has_employment and has_purpose:
         
         # 1. VERIFICATION GATE
         # If documents are NOT verified yet, request them first
@@ -472,6 +485,8 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
             
             # Check if we already asked (to prevent spamming, optional but good UX)
             if not data.get("verification_requested"):
+                # LOCK IMMEDIATELY to prevent race conditions (Echo/Barge-in)
+                data["verification_requested"] = True
                 logger.info("Critical Data Present -> REQUESTING DOCUMENT VERIFICATION")
                 
                 # Construct applicant data for frontend to pre-fill if needed
@@ -528,7 +543,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         "application_id": application_id
                     }
                 })
-                data["verification_requested"] = True
+                # Flag set at the start to prevent race conditions
             return
 
             # 2. ELIGIBILITY CHECK (Only runs if documents_verified == True)
@@ -626,6 +641,11 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                             is_final = res.get('is_final', False)
                             
                             if is_final and len(sentence) > 0:
+                                # FIX: Stop processing if verification already requested (Prevent Echo Loop)
+                                if structured_data.get("verification_requested"):
+                                    logger.info(f"Verification requested. Ignoring input: {sentence}")
+                                    continue
+
                                 # NOISE GATE: Ignore very short inputs or common hallucinations
                                 clean_text = sentence.strip().lower()
                                 # Allow: hi, no, ok, yes, hey. Block: "a", "", "thank you"
@@ -678,6 +698,11 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history[-10:])
     
+    # DOUBLE LOCK: Reject processing if we are already verifying
+    if data.get("verification_requested"):
+         logger.warning("Rejecting LLM processing: Verification already requested.")
+         return
+    
     try:
         completion = await groq_client.chat.completions.create(
             model=GROQ_MODEL,
@@ -689,15 +714,67 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         
         full_response = ""
         is_collecting_json = False
+        suppress_text_stream = False
         json_buffer = ""
-        
-        # Buffer for sentence-level TTS
         sentence_buffer = ""
+        held_tokens = "" # FIX: Buffer for risky prefixes
         
         async for chunk in completion:
             content = chunk.choices[0].delta.content
             if not content: continue
+
+            # TRIPLE LOCK: Runtime check for parallel completion
+            if data.get("verification_requested"):
+                logger.warning("Aborting stream: Verification triggered by parallel task.")
+                break
             
+            # 0. KEYWORD SUPPRESSION LOGIC (V5 - Prefix Buffering)
+            if not is_collecting_json:
+                # Check if what we are building is a prefix of the forbidden phrases
+                RISKY_PHRASES = ["Perfect. I have all your details", "I am taking you to the verification"]
+                
+                temp_check = sentence_buffer + content
+                is_risky_prefix = False
+                should_suppress = False
+                
+                for phrase in RISKY_PHRASES:
+                    # Check if this could BECOME the forbidden phrase
+                    if phrase.startswith(temp_check):
+                        is_risky_prefix = True
+                    # Check if it IS the forbidden phrase (or enough of it)
+                    if temp_check.startswith(phrase) or (len(temp_check) > 15 and temp_check in phrase):
+                        should_suppress = True
+            
+            if suppress_text_stream:
+                    pass
+            elif should_suppress:
+                    # MATCH FOUND! ENABLE SUPPRESSION
+                    logger.warning(f"SUPPRESSING FORBIDDEN PHRASE: {temp_check}")
+                    suppress_text_stream = True
+                    held_tokens = "" 
+            elif is_risky_prefix:
+                    # DANGER: It *might* be the phrase. Hold tokens.
+                    # logger.info(f"Holding risky tokens: {content} | Total: {held_tokens + content}")
+                    held_tokens += content
+            else:
+                    if held_tokens:
+                        await websocket.send_json({"type": "ai_token", "data": held_tokens})
+                        held_tokens = ""
+                    if not suppress_text_stream:
+                        await websocket.send_json({"type": "ai_token", "data": content})
+
+            if suppress_text_stream and not is_collecting_json:
+                 # Accumulate for analysis but DO NOT STREAM
+                 sentence_buffer += content
+                 full_response += content
+                 # Still check for JSON start (Nuclear Option)
+                 json_start_index = sentence_buffer.find('{')
+                 if json_start_index != -1:
+                      # If JSON starts, we can stop suppressing and switch to JSON mode
+                      pass 
+                 else:
+                      continue # SKIP STREAMING TOKENS
+
             # 1. State: Collecting JSON
             if is_collecting_json:
                 json_buffer += content
@@ -709,6 +786,12 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
             # Append to buffer for analysis
             sentence_buffer += content
             
+            # HOTFIX: Strip "CURRENT KNOWN INFO:" if it leaks at the start
+            if full_response.strip().startswith("CURRENT KNOWN INFO:"):
+                 logger.warning("Stripped leaked prompt header from response")
+                 sentence_buffer = sentence_buffer.replace("CURRENT KNOWN INFO:", "").lstrip()
+                 full_response = full_response.replace("CURRENT KNOWN INFO:", "").lstrip()
+            
             # SAFETY NET v4: NUCLEAR OPTION
             # Any occurrence of '{' is treated as code start.
             json_start_index = sentence_buffer.find('{')
@@ -719,6 +802,13 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 
                 # Split: Text | JSON
                 text_part = sentence_buffer[:json_start_index]
+                
+                # FIX: Clean delimiters AND duplicate messages from the text part
+                text_part = text_part.replace("|||", "").replace("||", "")
+                text_part = text_part.replace("Perfect. I have all your details.", "")
+                text_part = text_part.replace("I am taking you to the verification step now.", "")
+                text_part = text_part.strip()
+                
                 json_part = sentence_buffer[json_start_index:]
                 
                 # 1. Handle JSON
@@ -748,8 +838,10 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 sentence_buffer = "" # Clear sentence buffer as we flushed it
                 continue
 
-            # If SAFE, stream tokens
-            await websocket.send_json({"type": "ai_token", "data": content})
+            # If SAFE, stream tokens (Unless it's the duplicate duplicate completion message)
+            # FIX: Tokens handled by V5 Buffer Logic above. 
+            # We do NOT stream here anymore to avoid duplication.
+            pass
             
             # Check for JSON delimiter (Legacy support for |||)
             
@@ -784,7 +876,9 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                          complete_sentence = delimiter.join(parts[:-1]) + delimiter.strip()
                          remainder = parts[-1]
                          
-                         if complete_sentence.strip() and generate_audio:
+                         # FIX: Check for duplicate message
+                         is_duplicate = "Perfect. I have all your details" in complete_sentence
+                         if complete_sentence.strip() and generate_audio and not is_duplicate:
                              # Clean and Speak IMMEDIATELLY
                              speech_chunk = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', complete_sentence)
                              logger.info(f"TTS Streaming: {speech_chunk[:30]}...")
@@ -802,7 +896,17 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         if full_response.strip():
              history.append({"role": "assistant", "content": full_response})
 
+        # FLUSH HELD TOKENS (Important if stream ends with a partial prefix)
+        if held_tokens and not suppress_text_stream:
+             logger.info(f"Flushing trailing held tokens: {held_tokens}")
+             await websocket.send_json({"type": "ai_token", "data": held_tokens})
+
         # FLUSH REMAINING BUFFER (Critical for short replies like "Hello" or "Yes")
+        # Combine held_tokens into sentence_buffer for TTS if needed
+        # (Though visually we just sent it, TTS needs the buffer)
+        if held_tokens:
+             sentence_buffer += held_tokens
+
         if sentence_buffer.strip() and generate_audio:
              logger.info(f"TTS Streaming [FLUSH]: {sentence_buffer[:30]}...")
              speech_chunk = re.sub(r'\*+|`+|\[.*?\]|\(.*?\)', ' ', sentence_buffer)
@@ -884,7 +988,19 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                         normalized["loan_purpose"] = v
 
                 logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
-                data.update(normalized)
+                logger.info(f"NORMALIZED CLEAN DATA: {normalized}")
+                
+                # FIX: Data Latch Logic (Prevent Amnesia)
+                # Only update keys if the new value is valid (non-zero/non-empty)
+                # This stops the LLM from wiping existing data with hallucinated 0s
+                for key, value in normalized.items():
+                    if value not in [0, 0.0, "", None]:
+                        data[key] = value
+                    else:
+                        # Optional: Key exists but value is 0. 
+                        # Do we update? NO, keep old valid value if present.
+                        if key not in data:
+                            data[key] = value
                 
                 # DIAGNOSTIC: Log global data state
                 logger.info(f"FINAL DATA STATE: {data}")
