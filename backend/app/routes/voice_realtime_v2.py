@@ -88,7 +88,7 @@ async def get_groq_client():
 
 LOAN_AGENT_PROMPT = """You are LoanVoice. Be polite, friendly, but efficient.
  
-Your Goal: Collect exactly these 6 fields naturally.
+Your Goal: Collect exactly these 7 fields naturally.
 CHECKLIST:
 1. Full Name
 2. Monthly Income
@@ -96,13 +96,14 @@ CHECKLIST:
 4. Loan Amount Requested
 5. Employment Type (Salaried / Business)
 6. Loan Purpose (e.g., Personal, Home)
+7. Existing EMI (if any)
  
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
 2. If a field is `""` or `0`, it is MISSING. Ask for it naturally.
 3. Only ask for ONE missing field at a time.
 4. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
-5. Once ALL 6 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
+5. Once ALL 7 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
    - CRITICAL: Do NOT summarize the collected fields like "Here are the details I have...".
    - CRITICAL: Just say something brief like "Thanks." or nothing at all before the JSON.
 6. If user input clarifies a previous field, update it.
@@ -117,10 +118,10 @@ At the very end of your response, you MUST append the extracted data in JSON for
 Format:
 <Natural Language Response>
 |||
-{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": ""}
+{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": "", "existing_emi": -1}
  
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
-If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
+If a field is unknown, use empty string "" or 0 (or -1 for EMI). DO NOT USE 'null'.
 KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
 CRITICAL: ALWAYS output the JSON block containing the full current state at the end of every response.
 CRITICAL: Do NOT begin your response with "CURRENT KNOWN INFO:". Start directly with the question or answer.
@@ -488,9 +489,13 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
     has_name = len(str(name).strip()) > 1 and "..." not in str(name)
     has_employment = len(str(employment).strip()) > 2 and "..." not in str(employment)
     has_purpose = len(str(purpose).strip()) > 2 and "..." not in str(purpose)
+    # FIX: Require EMI (Allow 0, but reject -1 which is our "Missing" flag)
+    # Note: If key is missing, get() returns -1 (default)
+    emi = data.get("existing_emi", -1)
+    has_emi = float(emi) >= 0
 
     # If we have all required fields
-    if has_income and has_score and has_amount and has_name and has_employment and has_purpose:
+    if has_income and has_score and has_amount and has_name and has_employment and has_purpose and has_emi:
         
         # 1. VERIFICATION GATE
         # If documents are NOT verified yet, request them first
@@ -997,6 +1002,13 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                             normalized["monthly_income"] = float(clean_val) 
                          except: pass
                     
+                    # 7. Existing EMI (NEW)
+                    if k_lower in ["existing_emi", "emi", "monthly_emi", "installments", "current_emi"]:
+                         try: 
+                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            normalized["existing_emi"] = float(clean_val) 
+                         except: pass
+
                     # 2. Credit Score
                     elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:
                          try: 
