@@ -2,7 +2,14 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../utils/auth";
 import { motion } from "framer-motion";
-import { Bot, FileText, TrendingUp, ArrowRight, Shield } from "lucide-react";
+import {
+  Bot,
+  FileText,
+  TrendingUp,
+  ArrowRight,
+  Shield,
+  PhoneCall,
+} from "lucide-react";
 import MiniChatbot from "../components/MiniChatbot";
 
 /*
@@ -41,7 +48,9 @@ export default function Home() {
             transition={{ duration: 0.7 }}
             className="text-lg text-slate-600 max-w-lg"
           >
-            Experience fast, intelligent and automated loan processing with AI-powered verification, smart assistance and instant eligibility scoring.
+            Experience fast, intelligent and automated loan processing with
+            AI-powered verification, smart assistance and instant eligibility
+            scoring.
           </motion.p>
 
           {/* Buttons */}
@@ -51,7 +60,6 @@ export default function Home() {
             transition={{ duration: 0.8 }}
             className="flex flex-col sm:flex-row gap-4 pt-4"
           >
-
             <button
               className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium shadow hover:bg-indigo-700 transition flex items-center gap-2"
               onClick={() => {
@@ -80,10 +88,13 @@ export default function Home() {
             </button>
           </motion.div>
         </div>
-      {/* MiniChatbot popup, shown when button is clicked */}
-      {showMiniChatbot && (
-        <MiniChatbot isMinimized={false} onToggleMinimize={() => setShowMiniChatbot(false)} />
-      )}
+        {/* MiniChatbot popup, shown when button is clicked */}
+        {showMiniChatbot && (
+          <MiniChatbot
+            isMinimized={false}
+            onToggleMinimize={() => setShowMiniChatbot(false)}
+          />
+        )}
 
         {/* Right: Visual */}
         <motion.div
@@ -106,7 +117,7 @@ export default function Home() {
           Powerful Features
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Card */}
           <FeatureCard
             icon={Bot}
@@ -127,6 +138,13 @@ export default function Home() {
             title="Instant Eligibility"
             description="Get fast eligibility scoring powered by ML models and contextual financial analysis."
             color="text-blue-600"
+          />
+
+          <FeatureCard
+            icon={PhoneCall}
+            title="Voice Agent"
+            description="Speak with our AI voice agent to complete your loan journey hands-free, from data capture to eligibility."
+            color="text-emerald-600"
           />
         </div>
       </section>
@@ -175,7 +193,9 @@ function FeatureCard({ icon: Icon, title, description, color }) {
       whileHover={{ y: -5 }}
       className="p-8 bg-white rounded-2xl shadow border border-slate-100 text-center"
     >
-      <div className={`mx-auto mb-4 p-4 rounded-xl bg-slate-100 inline-block ${color}`}> 
+      <div
+        className={`mx-auto mb-4 p-4 rounded-xl bg-slate-100 inline-block ${color}`}
+      >
         <Icon className="w-10 h-10" />
       </div>
       <h3 className="text-xl font-semibold text-slate-900 mb-2">{title}</h3>

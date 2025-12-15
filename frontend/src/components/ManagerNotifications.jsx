@@ -1,10 +1,28 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Bell, X, AlertCircle, CheckCircle, FileCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { managerAPI } from "../utils/api";
 
-const WS_URL =
-  process.env.REACT_APP_WS_URL ||
-  `ws://${window.location.host}/ws/manager/notifications`;
+// Derive WebSocket URL from API URL (or explicit env override) so it hits the backend, not the CRA dev server
+const getWsUrl = () => {
+  if (process.env.REACT_APP_WS_URL) return process.env.REACT_APP_WS_URL;
+
+  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
+  try {
+    const url = new URL(apiUrl);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = "/ws/manager/notifications";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    // Fallback: assume backend on port 8000
+    const host = window.location.hostname || "localhost";
+    return `ws://${host}:8000/ws/manager/notifications`;
+  }
+};
+
+const WS_URL = getWsUrl();
 
 function ManagerNotifications({
   onNotificationClick,
@@ -142,6 +160,50 @@ function ManagerNotifications({
       }
     };
   }, [connectWebSocket]);
+
+  // Always seed the bell with the most recent application on mount,
+  // so managers see at least the latest application even if they
+  // opened the dashboard after it was created (no live WS event).
+  useEffect(() => {
+    const preloadLatestApplication = async () => {
+      try {
+        const res = await managerAPI.getApplications(null, 1, 1);
+        const apps = res?.data || [];
+        if (!apps.length) return;
+        const app = apps[0];
+
+        setNotifications((prev) => {
+          // Don't override real-time notifications if they already exist
+          if (prev.length > 0) return prev;
+
+          const notif = {
+            type: "new_application",
+            full_name: app.full_name,
+            email: app.email,
+            loan_amount: app.loan_amount_requested || app.loan_amount,
+            application_id: app.id,
+            created_at: app.created_at,
+            id: Date.now() + Math.random(),
+            read: false,
+            timestamp: new Date().toISOString(),
+          };
+
+          const updated = [notif, ...prev].slice(0, 20);
+          const unread = updated.filter((n) => !n.read).length;
+
+          setLocalUnreadCount(unread);
+          setUnreadCount && setUnreadCount(unread);
+          setNotifCount && setNotifCount(updated.length);
+
+          return updated;
+        });
+      } catch (e) {
+        console.error("Failed to preload latest application notification", e);
+      }
+    };
+
+    preloadLatestApplication();
+  }, [setNotifCount, setUnreadCount]);
 
   // Mark notification as read
   const markAsRead = (id) => {

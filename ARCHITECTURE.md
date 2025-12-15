@@ -6,64 +6,65 @@ This document explains how all components of the AI Loan System work together to
 
 ---
 
-## 🔀 Dual Application Paths: Chatbot and Calling Agent
+## 🔀 Dual Application Paths: Real‑Time Calling Agent and Chat Assistant
 
-We support two parallel, interchangeable paths that ultimately write to the same `LoanApplication` record and continue through OCR, prediction, and reporting.
+The platform exposes two complementary ways to start and progress a loan application. Both ultimately write to the same `LoanApplication` record and flow into OCR, prediction, and reporting.
 
-- Chatbot Path (text-based)
-    - Frontend: `Chatbot.jsx`
-    - Backend: `POST /api/chat/message`
-    - When enough info is collected, user can jump to the document verification/upload step.
+- **Real‑Time Calling Agent (voice-first)**
+    - Frontend: `CallingAgentPanel.jsx` → `VoiceAgentRealtime_v2`
+    - Backend: `/api/voice/*` + `/api/voice-realtime-v2` stack (Vosk + Piper)
+    - Best for “call centre style” flows: continuous speech, streaming feedback and live eligibility checks.
 
-- Calling Agent Path (voice-based)
-    - Frontend: `CallingAgentPanel.jsx` using `VoiceAgentButton.jsx`
-    - Backend: `POST /api/voice/voice_agent`
-    - Each call turn is saved; once key fields are captured (name, monthly income, credit score, loan amount), eligibility is predicted and the application is linked.
+- **Chat Assistant (text-first, with optional simple voice button)**
+    - Frontend: `MiniChatbot.jsx` on `ApplyPage.jsx`, full `Chatbot.jsx` page if you mount it separately
+    - Backend: `POST /api/chat/message` (primary chat pipeline)
+    - Ideal for form-style Q&A, reviewing previous applications by ID, or following up after voice.
 
-Both are shown side-by-side on the Apply page:
+On the main apply screen:
 
 - Route: `/apply`
 - Component: `pages/ApplyPage.jsx`
-- Configuration: The Chatbot hides its internal voice button via `showVoiceAgentInHeader={false}` so the Calling Agent is a separate, distinct choice.
+- Layout: left column = real‑time calling agent, right column = structured application form + eligibility card, with a floating mini-chatbot in the bottom-right.
 
 ### High-level flow comparison
 
-Chatbot:
+Chat Assistant:
 ```
-User types → /api/chat/message → Ollama → response
+User types → `/api/chat/message` → selected LLM (Ollama/Gemini/OpenRouter) → response
      ↳ Application may be created/updated during the chat
      ↳ User proceeds to /verification for document upload
 ```
 
-Calling Agent:
+Real‑Time Calling Agent:
 ```
-User speaks → /api/voice/voice_agent
-     ↳ Whisper STT → transcript
-     ↳ Ollama → JSON field extraction + natural reply
-     ↳ gTTS → reply audio saved to /static/voices
-     ↳ Application created/updated (if enough fields)
-     ↳ Optional ML eligibility computed and saved
-     ↳ Frontend plays audio and shows CTA to /verification
+User speaks → `VoiceAgentRealtime_v2` streams audio
+    ↳ Vosk STT (streaming) → live transcript
+    ↳ LLM (via `LLM_PROVIDER`) extracts fields + drafts reply
+    ↳ Piper TTS streams audio back to the browser
+    ↳ Backend upserts `LoanApplication` (once enough structured fields exist)
+    ↳ Optional ML eligibility computed and surfaced to the UI
+    ↳ User is guided to the form/verification step on success
 ```
 
-### Frontend components and routes
+### Frontend components and routes (high‑level)
+
+- `src/App.js`
+    - Public routes: `/`, `/auth`, `/apply`, `/verify`, `/eligibility-result`, `/help`, `/contact`
+    - Manager/admin routes under `/admin/*` and `/manager`
+    - Public, read‑only route for shared dashboards: `/public-dashboard/:token`
 
 - `src/pages/ApplyPage.jsx`
-    - Renders two panels side-by-side: Chatbot and Calling Agent
-    - Keeps UX simple: pick either option and continue the same backend pipeline
+    - Left panel: `CallingAgentPanel` embedding `VoiceAgentRealtime_v2` (streaming agent)
+    - Right panel: `LoanApplicationForm` and `LoanResultCard`
+    - Floating `MiniChatbot` anchored bottom-right; can attach to an `applicationId` once created.
 
 - `src/components/Chatbot.jsx`
-    - Prop `showVoiceAgentInHeader` controls whether a voice button appears in the chat header; set to `false` on the Apply page so chat and calling are independent options
-    - Calls `chatAPI.sendMessage(text, applicationId?)`
-
-- `src/components/CallingAgentPanel.jsx`
-    - Hosts `VoiceAgentButton` and shows a live transcript of turns
-    - Surfaces an “Upload Documents” CTA when an `applicationId` is returned by the backend
+    - Full‑screen chat assistant (separate route if you mount it)
+    - Calls `chatAPI.sendMessage(text, applicationId?)` and shows structured suggestions returned by the backend.
 
 - `src/components/VoiceAgentButton.jsx`
-    - Captures audio via `MediaRecorder`
-    - Posts multipart form data to `/api/voice/voice_agent`
-    - Plays TTS reply from `/static/voices/*.mp3` URL
+    - Simpler, non‑streaming voice capture that posts audio to `/api/voice/voice_agent`
+    - Plays back MP3 replies from `/static/voices/*.mp3` and can notify the parent when an `application_id` is linked.
 
 - Routes in `src/App.js`
     - `/apply` → two-option page (Chatbot + Calling Agent)

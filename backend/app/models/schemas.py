@@ -231,6 +231,7 @@ class ManagerApplicationResponse(BaseModel):
     phone: Optional[str] = None
     annual_income: Optional[float] = None
     loan_amount: Optional[float] = None
+    loan_amount_requested: Optional[float] = None
     eligibility_score: Optional[float]
     approval_status: str
     created_at: datetime

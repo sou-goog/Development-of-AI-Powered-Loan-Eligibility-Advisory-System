@@ -173,7 +173,11 @@ export default function ManagerDashboard() {
   // ---- navigation ----
   const handleViewDashboard = async () => {
     try {
-      const user = window.auth?.getUser ? window.auth.getUser() : (typeof auth !== 'undefined' ? auth.getUser() : null);
+      const user = window.auth?.getUser
+        ? window.auth.getUser()
+        : typeof auth !== "undefined"
+        ? auth.getUser()
+        : null;
       const userId = user?.id;
       if (!userId) {
         toast.error("User ID not found. Please log in again.");
@@ -225,8 +229,8 @@ export default function ManagerDashboard() {
 
               <div className="px-6 py-4">
                 <div className="text-sm text-gray-500 mb-4">
-                  You have received a new loan application. Review and take action
-                  now.
+                  You have received a new loan application. Review and take
+                  action now.
                 </div>
 
                 {/* Action buttons */}
@@ -616,16 +620,41 @@ export default function ManagerDashboard() {
                       label="Phone"
                       value={selectedApp.phone}
                     />
-                    <ContactField
-                      icon={DollarSign}
-                      label="Loan Amount"
-                      value={`$${niceCurrency(selectedApp.loan_amount)}`}
-                    />
-                    <ContactField
-                      icon={BarChart3}
-                      label="Annual Income"
-                      value={`$${niceCurrency(selectedApp.annual_income)}`}
-                    />
+                    {(() => {
+                      const loanAmountDetail =
+                        selectedApp.loan_amount ??
+                        selectedApp.loan_amount_requested ??
+                        null;
+                      const loanValue =
+                        loanAmountDetail != null
+                          ? `$${niceCurrency(loanAmountDetail)}`
+                          : "N/A";
+                      return (
+                        <ContactField
+                          icon={DollarSign}
+                          label="Loan Amount"
+                          value={loanValue}
+                        />
+                      );
+                    })()}
+                    {(() => {
+                      const annualIncomeDetail =
+                        selectedApp.annual_income ??
+                        (selectedApp.monthly_income != null
+                          ? selectedApp.monthly_income * 12
+                          : null);
+                      const incomeValue =
+                        annualIncomeDetail != null
+                          ? `$${niceCurrency(annualIncomeDetail)}`
+                          : "N/A";
+                      return (
+                        <ContactField
+                          icon={BarChart3}
+                          label="Annual Income"
+                          value={incomeValue}
+                        />
+                      );
+                    })()}
                     <ContactField
                       icon={Target}
                       label="Eligibility Score"

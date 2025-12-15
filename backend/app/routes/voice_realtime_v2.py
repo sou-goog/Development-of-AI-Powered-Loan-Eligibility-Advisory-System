@@ -234,11 +234,17 @@ async def voice_stream_endpoint(websocket: WebSocket):
                         from app.models.database import SessionLocal, LoanApplication
                         from datetime import datetime
                         db = SessionLocal()
+                        # Persist both modern and legacy fields so manager dashboard "View" shows values
+                        monthly_income_val = float(income) if income else 0.0
+                        loan_amount_val = float(loan) if loan else 0.0
                         new_app = LoanApplication(
                             full_name=structured_data.get("name", "Voice User"),
-                            monthly_income=float(income),
+                            monthly_income=monthly_income_val,
+                            # Legacy fields used by ManagerDashboard detail view
+                            annual_income=monthly_income_val * 12 if monthly_income_val else None,
+                            loan_amount=loan_amount_val if loan_amount_val else None,
                             credit_score=int(credit),
-                            loan_amount_requested=float(loan),
+                            loan_amount_requested=loan_amount_val,
                             loan_tenure_years=5,
                             employment_type="Salaried",
                             eligibility_status="eligible" if eligible else "ineligible",
@@ -501,11 +507,16 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                 application_id = None
                 try:
                     db = next(get_db())
+                    monthly_income_val = float(data.get("monthly_income", 0) or 0.0)
+                    loan_amount_val = float(data.get("loan_amount", 0) or 0.0)
                     new_app = LoanApplication(
                         full_name=data.get("name", "Voice User"),
-                        monthly_income=float(data.get("monthly_income", 0)),
+                        monthly_income=monthly_income_val,
+                        # Legacy fields used by ManagerDashboard detail view
+                        annual_income=monthly_income_val * 12 if monthly_income_val else None,
+                        loan_amount=loan_amount_val if loan_amount_val else None,
                         credit_score=int(data.get("credit_score", 0)),
-                        loan_amount_requested=float(data.get("loan_amount", 0)),
+                        loan_amount_requested=loan_amount_val,
                         # Enhanced Voice Fields
                         employment_type=data.get("employment_type", "Salaried"),
                         loan_purpose=data.get("loan_purpose", "Personal"),

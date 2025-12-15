@@ -2,7 +2,7 @@
 
 🏦 **An intelligent loan eligibility platform with AI chat, voice interaction, document verification, and PDF report generation.**
 
-This project is a **free-tier version** that replicates AWS-based loan processing systems (Bedrock, Textract, SageMaker) using **open-source alternatives** and **local services**.
+This project is a **free-tier version** that replicates cloud-style loan processing systems (chat, OCR, ML scoring, reporting) using **open-source alternatives** and **local services** that run entirely on your machine.
 
 ---
 
@@ -84,24 +84,29 @@ The AI Loan System automates the loan application process by:
 
 ### Backend
 - **Framework**: FastAPI (Python)
-- **Database**: SQLite + SQLAlchemy ORM
+- **Database**: SQLite (default) or Postgres/Supabase via SQLAlchemy
 - **Authentication**: JWT (python-jose) + bcrypt
-- **LLM Chat**: Ollama (Llama3 model)
-- **Voice**: Whisper (STT) + gTTS (TTS)
-- **Document OCR**: Tesseract
-- **ML Model**: XGBoost + Scikit-learn
-- **PDF Generation**: Jinja2 + WeasyPrint
+- **LLM Chat**: Pluggable via `LLM_PROVIDER` (`ollama`, `gemini`, `openrouter`)
+- **Voice (batch)**: Whisper (STT) + gTTS (TTS) over REST in `voice_routes`
+- **Voice (real-time)**: Vosk STT + Piper TTS in the streaming agent (`voice_realtime_v2`)
+- **Document OCR**: Tesseract (with graceful mock fallback)
+- **ML Model**: XGBoost + Scikit-learn via `MLModelService`
+- **PDF Generation**: Jinja2 + WeasyPrint via `ReportService`
+- **Notifications & OTP**: Email-based OTP and WebSocket manager notifications
 
 ### Frontend
 - **Framework**: React 18
-- **Styling**: Tailwind CSS
-- **HTTP Client**: Axios
-- **Routing**: React Router v6
+- **Styling**: Tailwind CSS + custom design system
+- **HTTP Client**: Axios wrappers in `src/utils/api.js`
+- **Routing**: React Router v6 (see `src/App.js`)
+- **State/UX**: Toasts (`react-toastify`), framer-motion animations
 
-### Local Services
-- **Ollama**: Local LLM inference server
+### Local / External Services
+- **Ollama**: Local LLM inference server (default provider)
 - **Tesseract**: Open-source OCR engine
-- **Whisper**: OpenAI's speech recognition
+- **Whisper**: OpenAI's speech recognition for file-based STT
+- **Vosk**: Streaming STT for the real-time voice agent
+- **Piper**: Low-latency TTS for the real-time voice agent
 
 ---
 
@@ -165,7 +170,7 @@ cd ~/Documents/Machine_Learning_Projects/Infosys_Project
 cd ai-loan-system
 ```
 
-### 2. Backend Setup
+### 2. Backend Setup (API + default users)
 
 ```bash
 cd backend
@@ -177,37 +182,35 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Create .env file
-cp .env.example .env
+# Create .env file (if you don't have one yet)
+cp .env.example .env  # or create backend/.env manually
 
-# Edit .env with your settings (optional for local development)
-# SECRET_KEY=your-secret-key-change-in-production
-# DATABASE_URL=sqlite:///./ai_loan_system.db
+# Edit .env with your settings (local defaults shown below)
 ```
 
-### 3. Train ML Model
+### 3. Train ML Model (optional but recommended)
 
-**⚠️ IMPORTANT**: You must provide your own trained ML model. The system does not include a pre-trained model.
+**⚠️ IMPORTANT**: You must provide your own trained ML model, or adapt `ml/loan_training.py` to your dataset. The repo ships a template only.
 
 ```bash
-# From backend directory
-cd ../ml
+# From project root
+cd ml
 
 # Edit loan_training.py to load your own dataset
-# Modify the load_your_dataset() function with your data
-code loan_training.py
+# Implement load_your_dataset() with your data source
+$EDITOR loan_training.py
 
-# Run the training script
+# Run the training script (will error until you implement loading)
 python3 loan_training.py
 
-# This creates your trained model at:
-# ../backend/app/models/loan_model.pkl
+# By default this saves a model to:
+#   ml/app/models/loan_model.pkl
 ```
 
-**Requirements for your dataset:**
-- CSV format with columns: `annual_income`, `credit_score`, `loan_amount`, `loan_term_months`, `num_dependents`, `employment_status`, `eligible`
+**Default template dataset requirements (if you follow `loan_training.py` as-is):**
+- Tabular data with columns: `annual_income`, `credit_score`, `loan_amount`, `loan_term_months`, `num_dependents`, `employment_status`, `eligible`
 - `eligible` column should be 0 (ineligible) or 1 (eligible)
-- At least 1000+ samples recommended
+- At least 1000+ samples recommended for a stable model
 
 ### 3b. Using your own pre-trained model (no training step)
 
@@ -227,10 +230,10 @@ Alternatively, you can configure a custom directory via environment variable in 
 ML_MODEL_DIR=/absolute/path/to/ai-loan-system/ml/app/models
 ```
 
-The service will try the following in order:
-1) `ML_MODEL_DIR` env variable
+`MLModelService` will look for artifacts in this order:
+1) `ML_MODEL_DIR` env variable (absolute or relative to backend)
 2) The parent directory of an explicitly provided model path (internal use)
-3) `ml/app/models` relative to the repo
+3) `ml/app/models` relative to the repo root
 4) Fallback to `backend/app/models`
 
 ### 4. Frontend Setup
