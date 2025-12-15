@@ -12,8 +12,9 @@ The platform exposes two complementary ways to start and progress a loan applica
 
 - **Real‑Time Calling Agent (voice-first)**
     - Frontend: `CallingAgentPanel.jsx` → `VoiceAgentRealtime_v2`
-    - Backend: `/api/voice/*` + `/api/voice-realtime-v2` stack (Vosk + Piper)
-    - Best for “call centre style” flows: continuous speech, streaming feedback and live eligibility checks.
+    - Backend (default, cloud): `/api/voice-realtime-v2/voice/stream` WebSocket using **Deepgram Nova‑2** (streaming STT), **Groq Llama 3** (LLM), and **Deepgram Aura** (streaming TTS) as implemented in `voice_realtime_v2.py`.
+    - Backend (local alternative): legacy `/voice/stream` WebSocket in `voice_realtime.py` using **Vosk** (offline STT) + **Piper** (offline TTS), with health checks in `voice_health.py`.
+    - Best for “call centre style” flows: continuous speech, streaming feedback and live eligibility checks, either via cloud (Deepgram+Groq) or fully local (Vosk+Piper).
 
 - **Chat Assistant (text-first, with optional simple voice button)**
     - Frontend: `MiniChatbot.jsx` on `ApplyPage.jsx`, full `Chatbot.jsx` page if you mount it separately

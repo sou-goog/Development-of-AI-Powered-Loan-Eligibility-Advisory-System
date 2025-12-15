@@ -93,8 +93,9 @@ The AI Loan System automates the loan application process by:
 - **Database**: SQLite (default) or Postgres/Supabase via SQLAlchemy
 - **Authentication**: JWT (python-jose) + bcrypt
 - **LLM Chat**: Pluggable via `LLM_PROVIDER` (`ollama`, `gemini`, `openrouter`)
-- **Voice (batch)**: Whisper (STT) + gTTS (TTS) over REST in `voice_routes`
-- **Voice (real-time)**: Vosk STT + Piper TTS in the streaming agent (`voice_realtime_v2`)
+- **Voice (batch, local)**: Whisper CLI (STT) + FFmpeg + gTTS (TTS) over REST in `voice_routes` (`/api/voice/transcribe`, `/api/voice/synthesize`, `/api/voice/voice_agent`)
+- **Voice (real-time, cloud)**: Deepgram Nova‑2 streaming STT + Groq Llama 3 (`AsyncGroq`) + Deepgram Aura streaming TTS in `voice_realtime_v2` (WebSocket `/voice/stream` mounted under the voice realtime v2 API)
+- **Voice (real-time, local alternative)**: Vosk STT + Piper TTS via WebSocket in `voice_realtime.py`, with environment/health checks exposed from `voice_health.py`
 - **Document OCR**: Tesseract (with graceful mock fallback)
 - **ML Model**: XGBoost + Scikit-learn via `MLModelService`
 - **PDF Generation**: Jinja2 + WeasyPrint via `ReportService`
@@ -110,9 +111,11 @@ The AI Loan System automates the loan application process by:
 ### Local / External Services
 - **Ollama**: Local LLM inference server (default provider)
 - **Tesseract**: Open-source OCR engine
-- **Whisper**: OpenAI's speech recognition for file-based STT
-- **Vosk**: Streaming STT for the real-time voice agent
-- **Piper**: Low-latency TTS for the real-time voice agent
+- **Whisper**: OpenAI's CLI speech recogniser for file-based STT in the batch voice agent
+- **Vosk**: Offline streaming STT backend used by the local WebSocket agent (`voice_realtime.py`)
+- **Piper**: Offline low-latency TTS used by the local WebSocket agent (`voice_realtime.py`)
+- **Deepgram**: Cloud STT + TTS (Nova‑2 + Aura) used by the default real-time voice agent (`voice_realtime_v2.py`)
+- **Groq**: Cloud LLM (Llama 3) used by the default real-time voice agent (`voice_realtime_v2.py`)
 
 ---
 
@@ -313,6 +316,9 @@ Backend keys (most important):
 - OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_BASE_URL, OPENROUTER_SITE_URL, OPENROUTER_APP_NAME: OpenRouter config.
   - Get a key at https://openrouter.ai/ and set a default model.
 - WHISPER_MODEL, WHISPER_LANGUAGE: STT model size and language hint.
+- VOSK_MODEL_PATH, PIPER_MODEL: Optional local streaming STT/TTS models for the legacy Vosk+Piper WebSocket agent.
+- GROQ_API_KEY, GROQ_MODEL: Groq cloud LLM settings used by the default real-time voice agent in `voice_realtime_v2.py`.
+- DEEPGRAM_API_KEY: Deepgram cloud key used for both streaming STT and Aura TTS in `voice_realtime_v2.py`.
 - SMTP_SERVER, SMTP_PORT, SMTP_EMAIL, SMTP_PASSWORD: Email for OTP/notifications.
 - OTP_SECRET: Secret seed used for generating OTPs (dev-friendly default provided).
 - ML_MODEL_DIR: Optional path to trained model artifacts.
