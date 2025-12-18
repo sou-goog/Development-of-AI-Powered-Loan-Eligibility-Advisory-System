@@ -100,7 +100,7 @@ CHECKLIST:
  
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
-2. If a field is `""` or `0`, it is MISSING. Ask for it naturally.
+2. If a field is `""`, `0` or `-1`, it is MISSING. Ask for it naturally.
 3. Only ask for ONE missing field at a time.
 4. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
 5. Once ALL 7 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
@@ -174,7 +174,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
     structured_data = {}
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1100&vad_events=true&endpointing=400"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -591,7 +591,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         "Loan_Amount_Requested": amount,
                         # Defaults
                         "Loan_Tenure_Years": 5, 
-                        "Existing_EMI": 0,
+                        "Existing_EMI": float(data.get("existing_emi", 0)),
                     }
                     
                     logger.info(f"APPLICANT FOR ML: {applicant}")
@@ -689,7 +689,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                                     llm_task.cancel()
                                     logger.info("Cancelled previous LLM task for new input")
                                 
-                                await websocket.send_json({"type": "final_transcript", "data": sentence})
+                                await websocket.send_json({"type": "final_transcript", "data": sentence.rstrip('.')})
                                 # Call global process function
                                 llm_task = asyncio.create_task(process_llm_response(sentence, websocket, conversation_history, structured_data))
                 except Exception as e:
@@ -719,9 +719,9 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
     current_state_str = json.dumps(data, indent=2)
     system_prompt = LOAN_AGENT_PROMPT + f"\n\nCURRENT KNOWN INFO:\n{current_state_str}"
     
-    # We use last 10 messages for context
+    # We use last 24 messages for context (increased to cover full 7-field flow)
     messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history[-10:])
+    messages.extend(history[-24:])
     
     # DOUBLE LOCK: Reject processing if we are already verifying
     if data.get("verification_requested"):
@@ -1005,9 +1005,11 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                     # 7. Existing EMI (NEW)
                     if k_lower in ["existing_emi", "emi", "monthly_emi", "installments", "current_emi"]:
                          try: 
-                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            clean_val = re.sub(r'[^\d.-]', '', str(v))
                             normalized["existing_emi"] = float(clean_val) 
                          except: pass
+
+
 
                     # 2. Credit Score
                     elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:

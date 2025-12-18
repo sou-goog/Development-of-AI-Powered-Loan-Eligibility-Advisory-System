@@ -284,7 +284,16 @@ const VoiceAgentRealtime = () => {
           // NEW: Stop mic immediately
           stopRecording();
 
-          // NEW: Clear pending text
+          // NEW: Flush pending text to transcript
+          if (currentAiTokenRef.current) {
+            const cleanText = currentAiTokenRef.current.split("|||")[0];
+            if (cleanText.trim()) {
+              setFinalTranscripts((prev) => [
+                ...prev,
+                { role: "assistant", text: cleanText },
+              ]);
+            }
+          }
           currentAiTokenRef.current = "";
           setCurrentAiToken("");
 
@@ -525,13 +534,14 @@ const VoiceAgentRealtime = () => {
   const handleCallToggle = () => {
     if (isRecording) {
       stopRecording();
-      // DO NOT close connection. Keep it alive for toggling back on.
-      // if (wsRef.current) wsRef.current.close(); 
     } else {
       // Reuse existing connection if valid
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         startRecording();
       } else {
+        // Force close existing if it's not OPEN (e.g. CLOSING or CLOSED)
+        if (wsRef.current) wsRef.current.close();
+
         // Start fresh connection -> Then record
         setIsConnected(false); // UI feedback
         connectWebSocket(() => {
