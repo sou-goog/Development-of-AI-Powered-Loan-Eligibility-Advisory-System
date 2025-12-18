@@ -35,11 +35,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from dotenv import load_dotenv
 
 # Database
-<<<<<<< HEAD
-from app.models.database import get_db, LoanApplication
-=======
 from app.models.database import get_db, LoanApplication, User
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -48,10 +44,7 @@ from groq import AsyncGroq
 # We keep DeepgramClient for REST/TTS, but use direct websockets for Streaming STT
 from deepgram import DeepgramClient
 from app.services.ml_model_service import MLModelService 
-<<<<<<< HEAD
-=======
 from app.utils.security import decode_token
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
 
 # Try to import optional services
 try:
@@ -96,11 +89,7 @@ async def get_groq_client():
 
 LOAN_AGENT_PROMPT = """You are LoanVoice. Be polite, friendly, but efficient.
  
-<<<<<<< HEAD
 Your Goal: Collect exactly these 7 fields naturally.
-=======
-Your Goal: Collect exactly these 6 fields naturally.
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
 CHECKLIST:
 1. Full Name
 2. Monthly Income
@@ -108,7 +97,6 @@ CHECKLIST:
 4. Loan Amount Requested
 5. Employment Type (Salaried / Business)
 6. Loan Purpose (e.g., Personal, Home)
-<<<<<<< HEAD
 7. Existing EMI (if any)
  
 Instructions:
@@ -117,15 +105,10 @@ Instructions:
 3. Only ask for ONE missing field at a time.
 4. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
 5. Once ALL 7 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
-=======
- 
-Instructions:
-1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
-2. If a field is `""` or `0`, it is MISSING. Ask for it naturally.
-3. Only ask for ONE missing field at a time.
-4. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
-5. Once ALL 6 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
+6. MAX RESPONSE LENGTH: 12 words. Be extremely concise.
+7. ABSOLUTELY NO explaining corrections. If user says "Saloid", just map it to "Salaried" and ask next question. DO NOT say "I think you meant...".
+8. ABSOLUTELY NO judgement on data. DO NOT say "That seems incomplete" or "That is a variation". Just say "Okay" and move on.
+9. Keep acknowledgments neutral: "Okay.", "Sure.", "Thanks.".
    - CRITICAL: Do NOT summarize the collected fields like "Here are the details I have...".
    - CRITICAL: Just say something brief like "Thanks." or nothing at all before the JSON.
 6. If user input clarifies a previous field, update it.
@@ -140,17 +123,10 @@ At the very end of your response, you MUST append the extracted data in JSON for
 Format:
 <Natural Language Response>
 |||
-<<<<<<< HEAD
 {"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": "", "existing_emi": -1}
  
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
 If a field is unknown, use empty string "" or 0 (or -1 for EMI). DO NOT USE 'null'.
-=======
-{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": ""}
- 
-IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
-If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
 KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
 CRITICAL: ALWAYS output the JSON block containing the full current state at the end of every response.
 CRITICAL: Do NOT begin your response with "CURRENT KNOWN INFO:". Start directly with the question or answer.
@@ -195,10 +171,8 @@ async def synthesize_speech_deepgram(text: str) -> Optional[bytes]:
 async def voice_stream_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-<<<<<<< HEAD
-=======
     # Check if API keys are available
-    if not GROQ_API_KEY or not DEEPGRAM_API_KEY or not deepgram_client_async or not groq_client:
+    if not GROQ_API_KEY or not DEEPGRAM_API_KEY or not deepgram_client or not groq_client:
         logger.warning("Voice agent accessed but API keys are missing")
         await websocket.send_json({
             "type": "error",
@@ -206,20 +180,12 @@ async def voice_stream_endpoint(websocket: WebSocket):
         })
         await websocket.close()
         return
-    
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
     session_id = str(uuid.uuid4())
     logger.info(f"Voice session started: {session_id} | VERSION V4: NUCLEAR JSON FILTER ACTIVE")
     
     # State
     conversation_history = []
     structured_data = {}
-<<<<<<< HEAD
-    
-    # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1100&vad_events=true&endpointing=400"
-=======
-
     # Try to resolve the currently logged-in user from JWT token
     # Token is expected as `?token=...` on the WebSocket URL, but we
     # also fall back to an Authorization header if present.
@@ -250,8 +216,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
         logger.warning(f"Failed to resolve user from WebSocket token: {auth_err}")
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=false&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=500"
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1100&vad_events=true&endpointing=400"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -566,7 +531,6 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
     has_name = len(str(name).strip()) > 1 and "..." not in str(name)
     has_employment = len(str(employment).strip()) > 2 and "..." not in str(employment)
     has_purpose = len(str(purpose).strip()) > 2 and "..." not in str(purpose)
-<<<<<<< HEAD
     # FIX: Require EMI (Allow 0, but reject -1 which is our "Missing" flag)
     # Note: If key is missing, get() returns -1 (default)
     emi = data.get("existing_emi", -1)
@@ -574,11 +538,6 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
 
     # If we have all required fields
     if has_income and has_score and has_amount and has_name and has_employment and has_purpose and has_emi:
-=======
-
-    # If we have all required fields
-    if has_income and has_score and has_amount and has_name and has_employment and has_purpose:
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
         
         # 1. VERIFICATION GATE
         # If documents are NOT verified yet, request them first
@@ -597,14 +556,10 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                     db = next(get_db())
                     monthly_income_val = float(data.get("monthly_income", 0) or 0.0)
                     loan_amount_val = float(data.get("loan_amount", 0) or 0.0)
-<<<<<<< HEAD
-                    new_app = LoanApplication(
-=======
                     user_email = data.get("user_email") or "voice_user@example.com"
                     user_id = data.get("user_id") or None
                     new_app = LoanApplication(
                         user_id=int(user_id) if user_id is not None else None,
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                         full_name=data.get("name", "Voice User"),
                         monthly_income=monthly_income_val,
                         # Legacy fields used by ManagerDashboard detail view
@@ -619,11 +574,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         existing_emi=float(data.get("existing_emi", 0)),
                         marital_status=data.get("marital_status", "Single"),
                         # Defaults
-<<<<<<< HEAD
-                        email="voice_user@example.com", 
-=======
                         email=user_email,
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                         phone="0000000000",
                         approval_status="pending",
                         document_verified=False,
@@ -685,11 +636,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                         "Loan_Amount_Requested": amount,
                         # Defaults
                         "Loan_Tenure_Years": 5, 
-<<<<<<< HEAD
                         "Existing_EMI": float(data.get("existing_emi", 0)),
-=======
-                        "Existing_EMI": 0,
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                     }
                     
                     logger.info(f"APPLICANT FOR ML: {applicant}")
@@ -787,11 +734,7 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
                                     llm_task.cancel()
                                     logger.info("Cancelled previous LLM task for new input")
                                 
-<<<<<<< HEAD
                                 await websocket.send_json({"type": "final_transcript", "data": sentence.rstrip('.')})
-=======
-                                await websocket.send_json({"type": "final_transcript", "data": sentence})
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                                 # Call global process function
                                 llm_task = asyncio.create_task(process_llm_response(sentence, websocket, conversation_history, structured_data))
                 except Exception as e:
@@ -821,15 +764,9 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
     current_state_str = json.dumps(data, indent=2)
     system_prompt = LOAN_AGENT_PROMPT + f"\n\nCURRENT KNOWN INFO:\n{current_state_str}"
     
-<<<<<<< HEAD
     # We use last 24 messages for context (increased to cover full 7-field flow)
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history[-24:])
-=======
-    # We use last 10 messages for context
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(history[-10:])
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
     
     # DOUBLE LOCK: Reject processing if we are already verifying
     if data.get("verification_requested"):
@@ -1110,18 +1047,12 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                             normalized["monthly_income"] = float(clean_val) 
                          except: pass
                     
-<<<<<<< HEAD
                     # 7. Existing EMI (NEW)
                     if k_lower in ["existing_emi", "emi", "monthly_emi", "installments", "current_emi"]:
                          try: 
                             clean_val = re.sub(r'[^\d.-]', '', str(v))
                             normalized["existing_emi"] = float(clean_val) 
                          except: pass
-
-
-
-=======
->>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                     # 2. Credit Score
                     elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:
                          try: 
