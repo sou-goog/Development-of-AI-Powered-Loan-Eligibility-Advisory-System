@@ -59,26 +59,62 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             if not db.query(User).first():
+<<<<<<< HEAD
                 # Create Admin
+=======
+                # Create Admin (email verified)
+>>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                 admin = User(
                     email="admin@example.com",
                     password_hash=hash_password("admin123"),
                     full_name="Admin User",
+<<<<<<< HEAD
                     role="manager"
                 )
                 db.add(admin)
                 
                 # Create Applicant
+=======
+                    role="manager",
+                    email_verified=True
+                )
+                db.add(admin)
+                
+                # Create Applicant (email verified)
+>>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
                 applicant = User(
                     email="user@example.com",
                     password_hash=hash_password("user123"),
                     full_name="Test Applicant",
+<<<<<<< HEAD
                     role="applicant"
                 )
                 db.add(applicant)
                 
                 db.commit()
                 print("Created default users: admin@example.com / admin123, user@example.com / user123")
+=======
+                    role="applicant",
+                    email_verified=True
+                )
+                db.add(applicant)
+                
+                # Create Test User (email verified, no OTP needed)
+                test_user = User(
+                    email="test@test.com",
+                    password_hash=hash_password("test123"),
+                    full_name="Test User",
+                    role="applicant",
+                    email_verified=True
+                )
+                db.add(test_user)
+                
+                db.commit()
+                print("Created default users:")
+                print("  - admin@example.com / admin123 (Manager)")
+                print("  - user@example.com / user123 (Applicant)")
+                print("  - test@test.com / test123 (Applicant - No OTP Required)")
+>>>>>>> 59b2e085e85386d12b8a6474539524b904d14fe2
         except Exception as e:
             print(f"Error creating default users: {e}")
         finally:
