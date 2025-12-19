@@ -810,8 +810,8 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 logger.warning("Aborting stream: Verification triggered by parallel task.")
                 break
             
-            # 0. KEYWORD SUPPRESSION LOGIC REMOVED to fix "Hi! I" blocking bug.
             # Simplified streaming:
+            logger.info(f"Chunk: {repr(content)}") # Debug log enabled
             
             if not is_collecting_json:
                  await websocket.send_json({"type": "ai_token", "data": content})
@@ -851,6 +851,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
 
             if json_start_index != -1:
                 # JSON DETECTED!
+                logger.info(f"JSON detected in stream (Nuclear Check)! Switching mode. Buffer: {repr(sentence_buffer)}")
                 logger.info("JSON detected in stream (Nuclear Check)! Switching mode.")
                 
                 # Split: Text | JSON
@@ -901,6 +902,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
             # Check for JSON delimiter in the ACCUMULATED buffer
             # Check for JSON delimiter in the ACCUMULATED buffer
             if "|||" in sentence_buffer:
+                logger.info("Switching to JSON mode: ||| delimiter found")
                 parts = sentence_buffer.split("|||")
                 speech_part = parts[0]
                 json_part = parts[1] if len(parts) > 1 else ""
