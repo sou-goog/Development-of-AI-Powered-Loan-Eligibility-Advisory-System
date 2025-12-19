@@ -1122,4 +1122,21 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         await evaluate_eligibility(data, websocket, ml_service)
 
     except Exception as e:
-        logger.error(f"LLM Error: {e}")
+        import traceback
+        error_msg = traceback.format_exc()
+        logger.error(f"LLM Processing Error causing silence: {e}\n{error_msg}")
+        
+        # Audio feedback to user
+        try:
+             error_audio = await synthesize_speech_deepgram("I'm sorry, I'm having trouble processing that.")
+             if error_audio:
+                 # Chunk the error audio
+                 chunk_size = 4096
+                 for i in range(0, len(error_audio), chunk_size):
+                     chunk = error_audio[i:i+chunk_size]
+                     import base64
+                     await websocket.send_json({"type": "audio_chunk", "data": base64.b64encode(chunk).decode('utf-8')})
+                 # End interaction
+                 await websocket.send_json({"type": "interaction_end"})
+        except:
+             pass
