@@ -512,7 +512,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
         except:
             pass
 
-async def evaluate_eligibility(data: dict, websocket, ml_service):
+async def evaluate_eligibility(data: dict, websocket, ml_service, ai_response_text: str = ""):
     """
     Centralized logic to check eligibility criteria and trigger result OR document verification.
     """
@@ -550,6 +550,11 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
         logger.info(f"Eligibility Check Failed. Missing/Invalid Fields: {missing_fields}")
 
     if not missing_fields:
+        # SAFEGUARD: If the AI is still ASKING for EMI, don't trigger verification yet
+        # (Even if existing_emi:0 is in the JSON, we wait for user confirmation)
+        if "emi" in ai_response_text.lower() and "?" in ai_response_text:
+            logger.info("AI is still asking for EMI - delaying verification")
+            return
         
         # 1. VERIFICATION GATE
         # If documents are NOT verified yet, request them first
@@ -1073,7 +1078,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
         
         # PROACTIVE ELIGIBILITY CHECK (Run every turn, regardless of JSON update)
         logger.info(f"Running Eligibility Check on Data: {data}")
-        await evaluate_eligibility(data, websocket, ml_service)
+        await evaluate_eligibility(data, websocket, ml_service, full_response)
 
     except Exception as e:
         import traceback
