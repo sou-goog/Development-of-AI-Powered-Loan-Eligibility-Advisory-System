@@ -1088,7 +1088,7 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                  chunk_size = 4096
                  for i in range(0, len(error_audio), chunk_size):
                      chunk = error_audio[i:i+chunk_size]
-                     import base64
+                     # import base64 # REMOVED to fix UnboundLocalError
                      await websocket.send_json({"type": "audio_chunk", "data": base64.b64encode(chunk).decode('utf-8')})
                  # End interaction
                  await websocket.send_json({"type": "interaction_end"})
