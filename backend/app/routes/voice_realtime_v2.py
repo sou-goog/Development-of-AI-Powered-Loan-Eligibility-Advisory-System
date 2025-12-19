@@ -810,49 +810,11 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 logger.warning("Aborting stream: Verification triggered by parallel task.")
                 break
             
-            # 0. KEYWORD SUPPRESSION LOGIC (V5 - Prefix Buffering)
-            if not is_collecting_json:
-                # FAST PATH: Immediately allow safe conversational starters
-                # This prevents "Prefix Check" latency for common words
-                SAFE_STARTERS = ["Okay", "Sure", "Thanks", "Yes", "No", "Right", "Great", "Ah", "Oh"]
-                if any(content.lstrip().startswith(s) for s in SAFE_STARTERS) and not sentence_buffer:
-                     await websocket.send_json({"type": "ai_token", "data": content})
-                     sentence_buffer += content
-                     full_response += content
-                     continue
-
-                # Check if what we are building is a prefix of the forbidden phrases
-                RISKY_PHRASES = ["Perfect. I have all your details", "I am taking you to the verification"]
-                
-                temp_check = sentence_buffer + content
-                is_risky_prefix = False
-                should_suppress = False
-                
-                for phrase in RISKY_PHRASES:
-                    # Check if this could BECOME the forbidden phrase
-                    if phrase.startswith(temp_check):
-                        is_risky_prefix = True
-                    # Check if it IS the forbidden phrase (or enough of it)
-                    if temp_check.startswith(phrase) or (len(temp_check) > 15 and temp_check in phrase):
-                        should_suppress = True
+            # 0. KEYWORD SUPPRESSION LOGIC REMOVED to fix "Hi! I" blocking bug.
+            # Simplified streaming:
             
-            if suppress_text_stream:
-                    pass
-            elif should_suppress:
-                    # MATCH FOUND! ENABLE SUPPRESSION
-                    logger.warning(f"SUPPRESSING FORBIDDEN PHRASE: {temp_check}")
-                    suppress_text_stream = True
-                    held_tokens = "" 
-            elif is_risky_prefix:
-                    # DANGER: It *might* be the phrase. Hold tokens.
-                    # logger.info(f"Holding risky tokens: {content} | Total: {held_tokens + content}")
-                    held_tokens += content
-            else:
-                    if held_tokens:
-                        await websocket.send_json({"type": "ai_token", "data": held_tokens})
-                        held_tokens = ""
-                    if not suppress_text_stream:
-                        await websocket.send_json({"type": "ai_token", "data": content})
+            if not is_collecting_json:
+                 await websocket.send_json({"type": "ai_token", "data": content})
 
             if suppress_text_stream and not is_collecting_json:
                  # Accumulate for analysis but DO NOT STREAM
