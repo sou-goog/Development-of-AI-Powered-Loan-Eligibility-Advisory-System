@@ -559,7 +559,7 @@ const VoiceAgentRealtime = () => {
       stopRecording();
 
     } else {
-    } else {
+
       // Reuse existing connection if valid AND READY
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isConnected) {
         startRecording();
