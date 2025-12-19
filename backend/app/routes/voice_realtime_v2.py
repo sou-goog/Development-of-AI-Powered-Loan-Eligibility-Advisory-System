@@ -102,7 +102,7 @@ CHECKLIST:
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
 2. If a field is `""`, `0` or `-1` (specifically for EMI), it is MISSING. 
-3. STRATEGY: Acknowledge previous input briefly (e.g., "Okay.", "Thanks."), THEN IMMEDIATELY ask for the next missing field in the checklist.
+3. STRATEGY: Acknowledge previous input naturally within the sentence (e.g., "Okay, what is..."). Avoid period-separated "Okay." if possible.
 4. Only ask for ONE missing field at a time.
 5. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
 6. Once ALL 7 fields are valid (non-zero, non-empty), output the JSON. (Do NOT say "Perfect...").
@@ -958,7 +958,10 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 continue
 
             # Check for sentence delimiters (Sentence-Level Streaming)
-            delimiters = ['. ', '? ', '! ', '.\n', '?\n', '!\n', ', ', ',\n']
+            # Check for sentence delimiters (Sentence-Level Streaming)
+            # OPTIMIZATION: Removed commas to prevent splitting "Okay, ..." into two chunks.
+            # Now we only split on full stops/questions/exclamations which is much smoother.
+            delimiters = ['. ', '? ', '! ', '.\n', '?\n', '!\n']
             if any(punct in sentence_buffer for punct in delimiters):
                 for delimiter in delimiters:
                      if delimiter in sentence_buffer:
@@ -967,19 +970,6 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                          complete_sentence = delimiter.join(parts[:-1]) + delimiter.strip()
                          remainder = parts[-1]
                          
-                         # SMART TTS LOGIC v3 (Stability Focused):
-                         # Only split on commas if:
-                         # 1. It is a Safe Starter (Instant Ack: "Okay,")
-                         # 2. OR The chunk is LONG enough to be worth speaking (> 40 chars) to hide latency.
-                         if delimiter.strip() == ',':
-                             SAFE_STARTERS = ["Okay", "Sure", "Thanks", "Yes", "No", "Right", "Great"]
-                             is_safe = any(complete_sentence.lstrip().startswith(s) for s in SAFE_STARTERS)
-                             
-                             if not is_safe and len(complete_sentence) < 40:
-                                 # It's a short/medium fragment (e.g. "However," or "Then I said,").
-                                 # Don't split. Buffer it to ensure smooth flow.
-                                 continue
-
                          # FIX: Check for duplicate message
                          is_duplicate = "Perfect. I have all your details" in complete_sentence
                          if complete_sentence.strip() and generate_audio and not is_duplicate:
