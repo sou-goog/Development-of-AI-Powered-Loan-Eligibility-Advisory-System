@@ -216,7 +216,7 @@ async def voice_stream_endpoint(websocket: WebSocket):
         logger.warning(f"Failed to resolve user from WebSocket token: {auth_err}")
     
     # Direct Direct WebSocket Connection Logic
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1100&vad_events=true&endpointing=400"
+    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&numerals=true&interim_results=true&utterance_end_ms=1000&vad_events=true&endpointing=400"
     
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}"
@@ -537,7 +537,19 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
     has_emi = float(emi) >= 0
 
     # If we have all required fields
-    if has_income and has_score and has_amount and has_name and has_employment and has_purpose and has_emi:
+    missing_fields = []
+    if not has_income: missing_fields.append("monthly_income")
+    if not has_score: missing_fields.append("credit_score")
+    if not has_amount: missing_fields.append("loan_amount")
+    if not has_name: missing_fields.append("name")
+    if not has_employment: missing_fields.append("employment_type")
+    if not has_purpose: missing_fields.append("loan_purpose")
+    if not has_emi: missing_fields.append("existing_emi")
+
+    if missing_fields:
+        logger.info(f"Eligibility Check Failed. Missing/Invalid Fields: {missing_fields}")
+
+    if not missing_fields:
         
         # 1. VERIFICATION GATE
         # If documents are NOT verified yet, request them first
@@ -1101,12 +1113,13 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                 
                 await websocket.send_json({"type": "structured_update", "data": normalized})
 
-                # PROACTIVE ELIGIBILITY CHECK
-                await evaluate_eligibility(data, websocket, ml_service)
-
             except Exception as json_err:
                  # This catch block handles JSON parsing failures
                  logger.error(f"Failed to parse JSON: {json_err}")
+        
+        # PROACTIVE ELIGIBILITY CHECK (Run every turn, regardless of JSON update)
+        logger.info(f"Running Eligibility Check on Data: {data}")
+        await evaluate_eligibility(data, websocket, ml_service)
 
     except Exception as e:
         logger.error(f"LLM Error: {e}")
