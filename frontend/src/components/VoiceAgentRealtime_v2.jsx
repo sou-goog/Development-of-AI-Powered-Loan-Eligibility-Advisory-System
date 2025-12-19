@@ -66,6 +66,7 @@ const Typewriter = ({ text }) => {
 };
 
 const VoiceAgentRealtime = () => {
+  // Version: v2.1 (Optimized Gain & Latency)
   // Connection state
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
