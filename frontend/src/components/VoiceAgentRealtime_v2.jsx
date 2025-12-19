@@ -411,7 +411,7 @@ const VoiceAgentRealtime = () => {
 
       const source = audioContext.createMediaStreamSource(stream);
       const gainNode = audioContext.createGain();
-      gainNode.gain.value = 10.0; // 10x Digital Gain Boost to catch soft voices
+      gainNode.gain.value = 3.0; // Moderate Digital Gain Boost (Prevents noise floor from triggering VAD)
 
       const destination = audioContext.createMediaStreamDestination();
 
@@ -442,8 +442,8 @@ const VoiceAgentRealtime = () => {
       };
 
       // 5. Start Recording
-      recorder.start(250); // 250ms chunks
-      console.log("✅ MediaRecorder start(250) called");
+      recorder.start(100); // 100ms chunks (Lower latency)
+      console.log("✅ MediaRecorder start(100) called");
 
       setIsRecording(true);
       isRecordingRef.current = true;
