@@ -40,7 +40,7 @@ if not os.getenv("VOSK_MODEL_PATH"):
         os.environ["VOSK_MODEL_PATH"] = str(default_vosk)
 
 # Import routes
-from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes, notification_routes, user_notification_routes
+from app.routes import auth_routes, chat_routes, voice_routes, voice_realtime_v2, ocr_routes, loan_routes, report_routes, manager_routes, otp_routes, notification_routes, user_notification_routes
 from app.routes import voice_health
 from app.routes import transcripts_routes
 from app.models.database import Base, engine, DB_FALLBACK_USED
