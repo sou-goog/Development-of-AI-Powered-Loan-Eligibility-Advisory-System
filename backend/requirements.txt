@@ -29,6 +29,7 @@ google-generativeai==0.3.2
 
 # PDF text extraction for OCR
 pdfminer.six==20221105
+reportlab==4.0.7  # For PDF report generation
 
 # Real-time voice agent dependencies
 # Real-time voice agent dependencies
