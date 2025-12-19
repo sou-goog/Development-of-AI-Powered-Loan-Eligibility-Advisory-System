@@ -138,9 +138,10 @@ app.include_router(ocr_routes.router, prefix="/api/verify", tags=["Document Veri
 app.include_router(loan_routes.router, prefix="/api/loan", tags=["Loan Prediction"])
 app.include_router(report_routes.router, prefix="/api/report", tags=["Reports"])
 app.include_router(manager_routes.router, prefix="/api/manager", tags=["Manager Dashboard"])
-app.include_router(otp_routes.router, prefix="/api/otp", tags=["OTP Verification"])
-app.include_router(notification_routes.router)
-app.include_router(user_notification_routes.router)
+# Email features disabled on free tier deployment (Render blocks SMTP port 587)
+# app.include_router(otp_routes.router, prefix="/api/otp", tags=["OTP Verification"])
+# app.include_router(notification_routes.router)
+# app.include_router(user_notification_routes.router)
 app.include_router(transcripts_routes.router, prefix="/api", tags=["Transcripts"])
 
 # Root endpoint
