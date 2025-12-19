@@ -3,6 +3,7 @@ services:
     name: ai-loan-backend
     runtime: python
     plan: free  # Free tier
+    pythonVersion: "3.11"  # SQLAlchemy 2.0.23 not compatible with Python 3.13
     buildCommand: cd backend && pip install -r requirements.txt
     startCommand: cd backend && python main.py
     envVars:
