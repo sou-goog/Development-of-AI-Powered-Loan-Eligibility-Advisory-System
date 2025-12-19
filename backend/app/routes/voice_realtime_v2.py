@@ -224,6 +224,9 @@ async def voice_stream_endpoint(websocket: WebSocket):
         async with websockets.connect(deepgram_url, extra_headers=headers) as dg_socket:
             logger.info("Deepgram WebSocket Connected!")
             
+            # SIGNAL FRONTEND: We are ready!
+            await websocket.send_json({"type": "backend_ready"})
+            
             # Helper to process logic when document is uploaded
             async def handle_document_logic():
                 logger.info("Processing Document Logic...")

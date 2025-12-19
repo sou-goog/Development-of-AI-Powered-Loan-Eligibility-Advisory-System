@@ -100,6 +100,7 @@ const VoiceAgentRealtime = () => {
   const currentAiTokenRef = useRef("");
   const messagesEndRef = useRef(null);
   const extractedDataRef = useRef({}); // Ref to access latest data in callbacks
+  const pendingReadyCallbackRef = useRef(null); // Ref to store callback while waiting for backend_ready
 
   const navigate = useNavigate();
 
@@ -199,6 +200,16 @@ const VoiceAgentRealtime = () => {
       const { type, data } = message;
 
       switch (type) {
+        case "backend_ready":
+          console.log("✅ Backend Ready (Deepgram Connected)");
+          setIsConnected(true);
+          // Execute pending callback (e.g., startRecording)
+          if (pendingReadyCallbackRef.current) {
+            pendingReadyCallbackRef.current();
+            pendingReadyCallbackRef.current = null;
+          }
+          break;
+
         case "partial_transcript":
           stopAudioPlayback();
           if (currentAiTokenRef.current) {
@@ -351,9 +362,12 @@ const VoiceAgentRealtime = () => {
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log("WebSocket connected");
-          setIsConnected(true);
-          if (onOpenCallback) onOpenCallback();
+          console.log("WebSocket connected. Waiting for backend_ready...");
+          // Do NOT set isConnected(true) yet. Wait for backend_ready signal.
+
+          if (onOpenCallback) {
+            pendingReadyCallbackRef.current = onOpenCallback;
+          }
         };
 
         ws.onmessage = (event) => {
@@ -545,9 +559,13 @@ const VoiceAgentRealtime = () => {
       stopRecording();
 
     } else {
-      // Reuse existing connection if valid
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    } else {
+      // Reuse existing connection if valid AND READY
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isConnected) {
         startRecording();
+      } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && !isConnected) {
+        // Connected but not Ready
+        toast.info("Connection initializing... Please wait.");
       } else {
         // Force close existing if it's not OPEN (e.g. CLOSING or CLOSED)
         if (wsRef.current) wsRef.current.close();
