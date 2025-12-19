@@ -101,7 +101,7 @@ CHECKLIST:
  
 Instructions:
 1. Look at 'CURRENT KNOWN INFO'. A field is PRESENT only if it is NOT empty and NOT 0.
-2. If a field is `""`, `0` or `-1` (specifically for EMI), it is MISSING. 
+2. If a field is `""` or `0`, it is MISSING. 
 3. STRATEGY: Acknowledge previous input naturally within the sentence (e.g., "Okay, what is..."). Avoid period-separated "Okay." if possible.
 4. Only ask for ONE missing field at a time.
 5. If name is missing, say: "Hi! I'm LoanVoice. Could I get your full name to start?"
@@ -121,10 +121,10 @@ At the very end of your response, you MUST append the extracted data in JSON for
 Format:
 <Short Acknowledgment + Question>
 |||
-{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": "", "existing_emi": -1}
+{"name": "", "monthly_income": 0, "credit_score": 0, "loan_amount": 0, "employment_type": "", "loan_purpose": "", "existing_emi": 0}
 
 IMPORTANT: Do NOT use markdown code blocks (```json). Just raw JSON.
-If a field is unknown, use empty string "" or 0 (or -1 for EMI). DO NOT USE 'null'.
+If a field is unknown, use empty string "" or 0. DO NOT USE 'null'.
 KEYS MUST BE SNAKE_CASE: "monthly_income", "loan_amount", etc.
 CRITICAL: ALWAYS output the JSON block containing the full current state at the end of every response.
 CRITICAL: Do NOT begin your response with "CURRENT KNOWN INFO:". Start directly with the question or answer.
@@ -532,10 +532,9 @@ async def evaluate_eligibility(data: dict, websocket, ml_service):
     has_name = len(str(name).strip()) > 1 and "..." not in str(name)
     has_employment = len(str(employment).strip()) > 2 and "..." not in str(employment)
     has_purpose = len(str(purpose).strip()) > 2 and "..." not in str(purpose)
-    # FIX: Require EMI (Allow 0, but reject -1 which is our "Missing" flag)
-    # Note: If key is missing, get() returns -1 (default)
-    emi = data.get("existing_emi", -1)
-    has_emi = float(emi) >= 0
+    # FIX: EMI is required. Check if key exists and was provided by LLM.
+    # EMI can be 0 (no existing EMI) or positive.
+    has_emi = "existing_emi" in data and data["existing_emi"] is not None
 
     # If we have all required fields
     missing_fields = []
@@ -1017,8 +1016,8 @@ async def process_llm_response(user_text: str, websocket: WebSocket, history: Li
                     # 7. Existing EMI (NEW)
                     if k_lower in ["existing_emi", "emi", "monthly_emi", "installments", "current_emi"]:
                          try: 
-                            clean_val = re.sub(r'[^\d.-]', '', str(v))
-                            normalized["existing_emi"] = float(clean_val) 
+                            clean_val = re.sub(r'[^\d.]', '', str(v))
+                            normalized["existing_emi"] = abs(float(clean_val)) 
                          except: pass
                     # 2. Credit Score
                     elif k_lower in ["credit_score", "score", "cibil", "creditscore", "credit"]:
