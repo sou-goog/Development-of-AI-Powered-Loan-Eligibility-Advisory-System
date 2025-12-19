@@ -347,7 +347,9 @@ const VoiceAgentRealtime = () => {
   const connectWebSocket = useCallback(
     (onOpenCallback = null) => {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const baseUrl = `${protocol}//${window.location.hostname}:8000`;
+      // Use environment variable for backend URL
+      const apiUrl = process.env.REACT_APP_API_URL || `http://localhost:8000/api`;
+      const baseUrl = apiUrl.replace(/^https?:/, protocol).replace(/\/api$/, '');
 
       // Attach JWT token as query param so backend can resolve user/email
       const token = auth.getToken();
