@@ -605,4 +605,4 @@ This project is open-source and available for educational purposes.
 
 ---
 
-**⭐ Star this repo if you found it helpful!**
+**Happy Lending! 🏦💰**
