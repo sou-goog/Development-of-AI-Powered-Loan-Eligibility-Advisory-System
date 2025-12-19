@@ -8,6 +8,12 @@
 
 ---
 
+## 📷 Demo
+
+https://github.com/user-attachments/assets/3bb50548-ca52-4b69-98fb-3b1bd8e47976
+
+---
+
 ## 🚀 Live Deployment
 
 **Frontend (React):** https://development-of-ai-powered-loan-elig.vercel.app/  
