@@ -16,6 +16,6 @@
     }
   ],
   "env": {
-    "REACT_APP_API_URL": "@backend-url"
+    "REACT_APP_API_URL": "https://ai-loan-backend-7eob.onrender.com"
   }
 }
